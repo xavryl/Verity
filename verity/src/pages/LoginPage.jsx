@@ -1,134 +1,111 @@
 // src/pages/LoginPage.jsx
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Lock, Mail, Loader2, ShieldCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Shield, Lock, Mail, Loader2 } from 'lucide-react';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({ email: '', password: '' });
-  const [error, setError] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
 
     try {
-      // 1. Authenticate with Supabase
-      const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
+      // 1. Authenticate with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
       if (authError) throw authError;
-      if (!user) throw new Error("No user found.");
 
-      // 2. Determine Role & Redirect
-      // We check the 'profiles' table or metadata. 
-      // For now, we'll fetch from the 'profiles' table we set up earlier.
-      const { data: profile, error: profileError } = await supabase
+      // 2. CHECK THE ROLE from the Profiles table
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('role')
-        .eq('id', user.id)
+        .eq('id', authData.user.id)
         .single();
 
-      // Fallback if profile missing (e.g. during dev), default to agent
-      const role = profile?.role || 'agent';
-
-      // 3. Routing Logic
-      switch (role) {
-        case 'superadmin':
-          navigate('/superadmin');
-          break;
-        case 'admin':
-          navigate('/admin');
-          break;
-        default:
-          navigate('/agent'); // Default for agents/brokers
+      if (profileError) {
+        console.error("Profile fetch error:", profileError);
+        // Fallback safety: If we can't find a profile, assume Agent
+        navigate('/agent'); 
+        return;
       }
 
-    } catch (err) {
-      console.error("Login failed:", err);
-      setError(err.message === "Invalid login credentials" 
-        ? "Incorrect email or password." 
-        : "Login failed. Please try again.");
+      // 3. ROUTING LOGIC - The "Traffic Cop"
+      const userRole = profileData?.role || 'agent';
+      console.log("Login Successful. User Role:", userRole);
+
+      if (userRole === 'superadmin') {
+        navigate('/superadmin');
+      } else if (userRole === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/agent');
+      }
+
+    } catch (error) {
+      alert(error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
-        
-        {/* Header */}
-        <div className="bg-slate-900 p-8 text-center">
-          <div className="mx-auto w-12 h-12 bg-emerald-500 rounded-lg flex items-center justify-center mb-4 text-white shadow-lg shadow-emerald-500/20">
-            <ShieldCheck size={28} />
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
+        <div className="text-center mb-8">
+          <div className="bg-emerald-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-600">
+            <Shield size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Verity Access</h1>
-          <p className="text-slate-400 text-sm mt-2">Authorized Personnel Only</p>
+          <h1 className="text-2xl font-bold text-gray-900">Project Verity</h1>
+          <p className="text-gray-500 mt-2">Secure Access Gateway</p>
         </div>
 
-        {/* Form */}
-        <div className="p-8">
-          <form onSubmit={handleLogin} className="space-y-6">
-            
-            {error && (
-              <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center gap-2 border border-red-100">
-                <Loader2 className="animate-spin" size={16} style={{display: 'none'}} /> {/* Hidden anchor */}
-                ⚠️ {error}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Email Address</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 text-gray-400" size={18} />
-                <input 
-                  type="email" 
-                  required
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition text-gray-700 font-medium"
-                  placeholder="broker@verity.ph"
-                  value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
-                />
-              </div>
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-3 text-gray-400" size={18} />
+              <input
+                type="email"
+                required
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                placeholder="agent@verity.ph"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 text-gray-400" size={18} />
-                <input 
-                  type="password" 
-                  required
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition text-gray-700 font-medium"
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                />
-              </div>
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-600/20 transition transform active:scale-95 flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 className="animate-spin" size={20}/> : "Sign In to Dashboard"}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <p className="text-xs text-gray-400">
-              Restricted Access. IP Address Logged.<br/>
-              Don't have an account? <span className="text-emerald-600 font-bold cursor-not-allowed">Contact Admin</span>.
-            </p>
           </div>
-        </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-3 text-gray-400" size={18} />
+              <input
+                type="password"
+                required
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-slate-900 text-white p-3 rounded-xl font-bold hover:bg-slate-800 transition flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="animate-spin" /> : "Sign In"}
+          </button>
+        </form>
       </div>
     </div>
   );

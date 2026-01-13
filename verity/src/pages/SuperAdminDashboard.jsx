@@ -1,10 +1,12 @@
 // src/pages/SuperAdminDashboard.jsx
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Users, Activity, Shield, UserPlus, Send, Loader2, CheckCircle, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; // Import Navigation
+import { Users, Activity, Shield, UserPlus, Send, Loader2, CheckCircle, Trash2, ShieldAlert } from 'lucide-react';
 import emailjs from '@emailjs/browser'; 
 
 export const SuperAdminDashboard = () => {
+  const navigate = useNavigate(); // Navigation hook
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,9 +16,43 @@ export const SuperAdminDashboard = () => {
   const [inviteRole, setInviteRole] = useState('agent');
   const [status, setStatus] = useState('idle'); 
 
-  // 1. FETCH REAL USERS
+  // ==========================================
+  // 1. SECURITY GUARD (THE NEW PART)
+  // ==========================================
+  useEffect(() => {
+    const checkSecurity = async () => {
+      // A. Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate('/login');
+        return;
+      }
+
+      // B. Check their role in the database
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      // C. KICK THEM OUT if they are not Super Admin
+      if (error || !profile || profile.role !== 'superadmin') {
+        alert("⛔ SECURITY ALERT: You are not authorized to view this page.");
+        navigate('/agent'); // Send them back to safety
+        return;
+      }
+
+      // D. If safe, load the data
+      fetchUsers();
+    };
+
+    checkSecurity();
+  }, [navigate]);
+  // ==========================================
+
+  // 2. FETCH REAL USERS
   const fetchUsers = async () => {
-    setLoading(true);
+    // We don't set loading true here anymore to avoid flickering during the security check
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -24,21 +60,17 @@ export const SuperAdminDashboard = () => {
     
     if (error) console.error('Error fetching users:', error);
     else setUsers(data || []);
-    setLoading(false);
+    setLoading(false); // Stop loading only after data is here
   };
 
-  useEffect(() => { fetchUsers(); }, []);
-
-  // 2. REAL INVITE HANDLER (EmailJS Connected)
+  // 3. REAL INVITE HANDLER (EmailJS Connected)
   const handleInvite = async (e) => {
     e.preventDefault();
     setStatus('sending');
 
     try {
-      // A. Auto-Generate Password
       const tempPassword = Math.random().toString(36).slice(-8) + "Verity1!";
       
-      // B. Create User in Supabase (Auth)
       const { data, error } = await supabase.auth.signUp({
         email: inviteEmail,
         password: tempPassword,
@@ -47,22 +79,20 @@ export const SuperAdminDashboard = () => {
 
       if (error) throw error;
 
-      // C. Ensure Profile Role matches
       if (data.user) {
          await supabase.from('profiles').update({ role: inviteRole }).eq('id', data.user.id);
       }
 
-      // D. SEND REAL EMAIL VIA EMAILJS
       await emailjs.send(
-        "service_5kg96fp",   // Your Service ID
-        "template_r0l7qfb",  // Your Template ID
+        "service_5kg96fp",   
+        "template_r0l7qfb", 
         {
             to_email: inviteEmail,
             role: inviteRole,
             password: tempPassword,
             login_link: "http://localhost:5173/login"
         },
-        "83x_AdtLDpl8JUSaA"  // Your Public Key
+        "83x_AdtLDpl8JUSaA"
       );
 
       setStatus('success');
@@ -79,30 +109,32 @@ export const SuperAdminDashboard = () => {
     }
   };
 
-  // 3. FORCE DELETE HANDLER (RPC Command)
   const handleDelete = async (userId) => {
-    if (!window.confirm("⚠️ WARNING: This will permanently delete the User and their Auth login. They will be able to register again.")) return;
+    if (!window.confirm("⚠️ WARNING: This will permanently delete the User and their Auth login.")) return;
     
-    setLoading(true);
-
     try {
-      // Call the Secure SQL Function
       const { error } = await supabase.rpc('delete_user_account', { 
         target_user_id: userId 
       });
 
       if (error) throw error;
-
       alert("User deleted successfully.");
       fetchUsers(); 
-
     } catch (err) {
       console.error(err);
       alert("Delete failed: " + err.message);
-    } finally {
-      setLoading(false);
     }
   };
+
+  // 4. LOADING STATE (Shows while checking security)
+  if (loading) {
+    return (
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center flex-col gap-3 text-gray-500">
+            <Loader2 className="animate-spin text-emerald-600" size={40}/>
+            <p className="font-mono text-xs uppercase tracking-widest">Verifying Clearance Level...</p>
+        </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 flex font-sans">
@@ -193,9 +225,6 @@ export const SuperAdminDashboard = () => {
 
             {/* USER LIST */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-              {loading ? (
-                  <div className="p-12 text-center text-gray-400 flex flex-col items-center"><Loader2 className="animate-spin mb-2" size={32}/><p>Loading profiles...</p></div>
-              ) : (
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead className="bg-gray-50/50 border-b border-gray-100">
@@ -221,7 +250,6 @@ export const SuperAdminDashboard = () => {
                         </tbody>
                     </table>
                 </div>
-              )}
             </div>
           </div>
         )}

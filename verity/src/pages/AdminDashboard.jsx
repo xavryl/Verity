@@ -1,55 +1,76 @@
 // src/pages/AdminDashboard.jsx
-import { useState } from 'react';
-import { Activity, Database, AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
+import { ShieldAlert, Loader2, MapPin, Database, Activity } from 'lucide-react';
+import { AmenitiesManager } from '../components/dashboard/AmenitiesManager'; // ✅ ADMIN ONLY
 
 export const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState('maintenance');
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [amenityCount, setAmenityCount] = useState(0);
+
+  useEffect(() => {
+    const checkAccess = async () => {
+      // 1. Auth Check
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { navigate('/login'); return; }
+
+      // 2. Role Check (Secure)
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      
+      if (!profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) {
+        alert("⛔ ACCESS DENIED: Operations Team Only.");
+        navigate('/agent'); 
+        return;
+      }
+
+      // 3. Fetch Stats
+      const { count } = await supabase.from('amenities').select('*', { count: 'exact', head: true });
+      setAmenityCount(count || 0);
+      
+      setLoading(false);
+    };
+    checkAccess();
+  }, [navigate]);
+
+  if (loading) return <div className="h-screen flex items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-blue-600" size={32}/></div>;
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
-      {/* SIDEBAR - NOTE: No "Shield" icon, just basic Admin */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-100">
-          <h1 className="text-xl font-bold flex items-center gap-2 text-gray-800">
-            <Activity className="text-blue-600" /> Verity <span className="text-xs bg-gray-200 text-gray-600 px-1 rounded">OPS</span>
+    <div className="min-h-screen bg-gray-50 p-8 font-sans">
+      <div className="max-w-5xl mx-auto space-y-8">
+        
+        {/* HEADER */}
+        <div>
+          <h1 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
+            <ShieldAlert className="text-blue-600"/> Operations Dashboard
           </h1>
+          <p className="text-gray-500 mt-1">Manage shared infrastructure and system alerts.</p>
         </div>
-        <nav className="flex-1 p-4 space-y-2">
-          <button onClick={() => setActiveTab('maintenance')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeTab === 'maintenance' ? 'bg-blue-50 text-blue-600 font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
-            <Database size={20} /> Data Maintenance
-          </button>
-        </nav>
-      </aside>
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 p-8">
-        <div className="max-w-4xl mx-auto">
-            <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex gap-3 items-start mb-8">
-                <AlertTriangle className="text-blue-600 shrink-0 mt-0.5" />
-                <div>
-                    <h3 className="font-bold text-blue-900">Maintenance Access Only</h3>
-                    <p className="text-sm text-blue-700">You have permissions to edit map data and clear caches. You cannot invite users or change billing.</p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                    <h3 className="font-bold text-gray-800 mb-2">Map Data Status</h3>
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-sm"><span>Polygons Loaded</span> <span className="font-mono font-bold">124</span></div>
-                        <div className="flex justify-between text-sm"><span>Routes Cached</span> <span className="font-mono font-bold">18</span></div>
-                        <div className="h-px bg-gray-100 my-2"></div>
-                        <button className="w-full py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold text-gray-600">Purge Route Cache</button>
-                    </div>
-                </div>
-                
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 opacity-50 pointer-events-none">
-                    <h3 className="font-bold text-gray-800 mb-2">User Directory</h3>
-                    <p className="text-xs text-gray-500">Access Restricted. Contact Super Admin.</p>
-                </div>
-            </div>
+        {/* STATS ROW */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+              <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center"><MapPin size={24}/></div>
+              <div><p className="text-2xl font-bold text-gray-900">{amenityCount}</p><p className="text-xs text-gray-500 uppercase font-bold">Total Amenities</p></div>
+           </div>
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center"><Database size={24}/></div>
+              <div><p className="text-2xl font-bold text-gray-900">Active</p><p className="text-xs text-gray-500 uppercase font-bold">System Status</p></div>
+           </div>
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"><Activity size={24}/></div>
+              <div><p className="text-2xl font-bold text-gray-900">0</p><p className="text-xs text-gray-500 uppercase font-bold">Pending Alerts</p></div>
+           </div>
         </div>
-      </main>
+
+        {/* AMENITIES UPLOAD SECTION */}
+        <div className="space-y-4">
+            <h2 className="text-lg font-bold text-gray-800">Infrastructure Management</h2>
+            <AmenitiesManager onUploadSuccess={() => window.location.reload()} />
+        </div>
+
+      </div>
     </div>
   );
 };
