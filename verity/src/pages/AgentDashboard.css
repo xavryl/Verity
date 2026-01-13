@@ -1,0 +1,376 @@
+/* src/pages/AgentDashboard.css */
+
+/* --- LAYOUT & CONTAINERS --- */
+.dashboard-container {
+    @apply flex h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden;
+}
+
+.dashboard-main {
+    /* flex-1 to fill space, mb-16 on mobile to avoid nav overlap */
+    @apply flex-1 flex flex-col min-w-0 mb-16 md:mb-0;
+}
+
+.dashboard-header {
+    @apply h-16 bg-white border-b border-gray-200 flex justify-between items-center px-6 md:px-8;
+}
+
+.header-actions {
+    @apply flex items-center gap-4;
+}
+
+/* --- SEARCH BAR --- */
+.search-wrapper {
+    @apply relative hidden md:block;
+}
+
+.search-icon {
+    @apply absolute left-3 top-1/2 -translate-y-1/2 text-gray-400;
+}
+
+.search-input {
+    @apply pl-10 pr-4 py-2 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 w-64;
+}
+
+/* Mobile Search (New) */
+.search-wrapper-mobile {
+    @apply relative block md:hidden w-full mr-4;
+}
+
+.search-input-mobile {
+    @apply pl-9 pr-4 py-2 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 w-full;
+}
+
+/* --- SIDEBAR --- */
+.sidebar {
+    /* Fixed: Removed conflicting 'flex' class */
+    @apply w-64 bg-white border-r border-gray-200 flex-col hidden md:flex;
+}
+
+.sidebar-brand {
+    @apply p-6 flex items-center gap-2 text-violet-700 font-bold text-xl tracking-tight;
+}
+
+.brand-logo {
+    @apply w-8 h-8 bg-violet-700 rounded-lg flex items-center justify-center text-white;
+}
+
+.brand-text-sub {
+    @apply text-gray-400 font-light;
+}
+
+.sidebar-nav {
+    @apply flex-1 px-4 space-y-1;
+}
+
+.nav-section-label {
+    @apply px-2 py-1 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-4;
+}
+
+.nav-section-label.mt-large {
+    @apply mt-8;
+}
+
+.sidebar-nav-btn {
+    @apply w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors;
+}
+
+.sidebar-nav-btn.active {
+    @apply bg-violet-50 text-violet-700;
+}
+
+.sidebar-nav-btn.inactive {
+    @apply text-gray-600 hover:bg-gray-50;
+}
+
+.nav-btn-content {
+    @apply flex items-center gap-3;
+}
+
+/* --- SIDEBAR PROFILE --- */
+.sidebar-profile {
+    @apply p-4 border-t border-gray-100;
+}
+
+.profile-container {
+    @apply flex items-center gap-3;
+}
+
+.profile-avatar {
+    @apply w-10 h-10 rounded-full bg-gray-200;
+}
+
+.profile-name {
+    @apply text-sm font-bold;
+}
+
+.profile-status {
+    @apply text-xs text-green-600 flex items-center gap-1;
+}
+
+.status-dot {
+    @apply w-2 h-2 rounded-full bg-green-500;
+}
+
+/* --- KANBAN BOARD --- */
+.kanban-stats-grid {
+    @apply grid grid-cols-2 md:grid-cols-4 gap-4 p-6 pb-2;
+}
+
+.kanban-container {
+    /* Mobile: Scrollable, smooth snap */
+    @apply flex-1 overflow-x-auto overflow-y-hidden p-4 md:p-6 scroll-smooth snap-x snap-mandatory;
+}
+
+.kanban-row {
+    @apply flex gap-4 md:gap-6 h-full min-w-full md:min-w-[1000px];
+}
+
+.kanban-column {
+    /* Mobile: 85% width, Snap Center */
+    @apply flex-1 flex flex-col h-full min-w-[85vw] md:min-w-[300px] snap-center;
+}
+
+.kanban-column-header {
+    @apply flex items-center justify-between mb-4 pb-2 border-b-2;
+}
+
+.column-title {
+    @apply font-bold text-gray-700;
+}
+
+.column-count {
+    @apply bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-full;
+}
+
+.kanban-drop-zone {
+    @apply flex-1 bg-gray-100/50 rounded-xl p-3 overflow-y-auto transition-colors;
+}
+
+.kanban-drop-zone.dragging-over {
+    @apply bg-violet-50/50;
+}
+
+/* --- LEAD CARD --- */
+.lead-card {
+    /* Removed 'group' (handled in JSX) */
+    @apply bg-white p-4 rounded-xl border border-gray-100 shadow-sm transition-shadow mb-3 cursor-pointer;
+}
+
+.lead-card:hover {
+    @apply shadow-md;
+}
+
+.lead-card.dragging {
+    @apply shadow-xl ring-2 ring-violet-500 rotate-2;
+}
+
+.card-header {
+    @apply flex justify-between items-start mb-2;
+}
+
+.card-user-info {
+    @apply flex items-center gap-2;
+}
+
+.lead-avatar {
+    @apply w-8 h-8 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 text-white flex items-center justify-center text-xs font-bold;
+}
+
+.lead-name {
+    @apply font-bold text-gray-900 text-sm;
+}
+
+.lead-time {
+    @apply text-xs text-gray-500;
+}
+
+.card-options-btn {
+    @apply text-gray-300 hover:text-gray-600;
+}
+
+.card-body {
+    @apply mb-3;
+}
+
+.property-tag {
+    @apply flex items-center gap-1 text-xs font-bold text-violet-700 mb-1;
+}
+
+.lead-msg {
+    @apply text-xs text-gray-600 line-clamp-2 italic;
+}
+
+.card-actions {
+    @apply flex gap-2 mt-3 pt-3 border-t border-gray-50;
+}
+
+/* --- STAT CARD --- */
+.stat-card {
+    @apply bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between;
+}
+
+.stat-label {
+    @apply text-xs font-bold text-gray-400 uppercase;
+}
+
+.stat-value {
+    @apply text-xl font-bold text-gray-900 mt-1;
+}
+
+.stat-icon-wrapper {
+    @apply p-3 rounded-xl;
+}
+
+/* --- EMPTY STATE --- */
+.empty-state-container {
+    @apply flex-1 flex items-center justify-center text-gray-400;
+}
+
+.empty-state-content {
+    @apply text-center;
+}
+
+.empty-state-icon-wrapper {
+    @apply w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4;
+}
+
+/* --- UTILS --- */
+.badge-red {
+    @apply bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full;
+}
+
+.badge-notification {
+    @apply absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white;
+}
+
+.icon-btn {
+    @apply relative p-2 text-gray-500 hover:bg-gray-100 rounded-full;
+}
+
+.action-btn {
+    @apply flex-1 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors;
+}
+
+.action-btn-gray {
+    @apply bg-gray-50 text-gray-600 hover:bg-gray-100;
+}
+
+.action-btn-emerald {
+    @apply bg-emerald-50 text-emerald-600 hover:bg-emerald-100;
+}
+
+/* --- LEAD INSPECTOR (SLIDE-OVER) --- */
+.inspector-overlay {
+    @apply fixed inset-y-0 right-0 w-full md:w-[400px] bg-white shadow-2xl z-[2000] border-l border-gray-100 flex flex-col transition-transform duration-300;
+}
+
+.inspector-header {
+    @apply p-6 border-b border-gray-100 flex justify-between items-start bg-gray-50/50;
+}
+
+.inspector-header-content {
+    @apply flex gap-4;
+}
+
+.inspector-avatar {
+    @apply w-12 h-12 rounded-full bg-violet-600 text-white flex items-center justify-center text-xl font-bold;
+}
+
+.inspector-name {
+    @apply text-xl font-bold text-gray-900;
+}
+
+.inspector-meta {
+    @apply flex items-center gap-2 text-xs text-gray-500 mt-1;
+}
+
+.inspector-badge {
+    @apply bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider;
+}
+
+.inspector-close-btn {
+    @apply text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition;
+}
+
+.inspector-body {
+    @apply flex-1 overflow-y-auto p-6 space-y-8;
+}
+
+.section-label {
+    @apply text-xs font-bold text-gray-400 uppercase tracking-wider mb-2;
+}
+
+.contact-row {
+    @apply flex items-center gap-3 text-sm text-gray-700 mb-3;
+}
+
+.contact-icon {
+    @apply w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500;
+}
+
+.property-box {
+    @apply p-4 rounded-xl border border-gray-100 bg-gray-50;
+}
+
+.property-box-inner {
+    @apply flex items-start gap-3;
+}
+
+.property-icon-box {
+    @apply p-2 bg-white rounded-lg shadow-sm;
+}
+
+.chat-bubble {
+    @apply flex gap-3;
+}
+
+.chat-avatar {
+    @apply w-8 h-8 rounded-full bg-gray-200 shrink-0 flex items-center justify-center text-xs font-bold text-gray-500;
+}
+
+.chat-message {
+    @apply bg-gray-100 p-3 rounded-2xl rounded-tl-none text-sm text-gray-700;
+}
+
+.reply-area {
+    @apply pt-4;
+}
+
+.reply-input {
+    @apply w-full p-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none;
+}
+
+.reply-btn {
+    @apply w-full mt-2 bg-violet-600 text-white font-bold py-2 rounded-lg text-sm hover:bg-violet-700 transition;
+}
+
+.inspector-footer {
+    @apply p-4 border-t border-gray-100 bg-white grid grid-cols-2 gap-3;
+}
+
+.footer-btn {
+    @apply flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold;
+}
+
+.footer-btn-outline {
+    @apply border border-gray-200 text-gray-600 hover:bg-gray-50;
+}
+
+.footer-btn-solid {
+    @apply bg-emerald-50 text-emerald-700 hover:bg-emerald-100;
+}
+
+/* --- MOBILE NAVIGATION --- */
+.mobile-nav {
+    @apply fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex items-center justify-around z-[1000] md:hidden;
+    /* pb-safe accounts for iPhone Home Indicator bar */
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.mobile-nav-item {
+    @apply flex flex-col items-center justify-center py-2 flex-1 text-gray-400 text-[10px] font-bold uppercase tracking-wider active:bg-gray-50 transition-colors;
+}
+
+.mobile-nav-item.active {
+    @apply text-violet-700;
+}
