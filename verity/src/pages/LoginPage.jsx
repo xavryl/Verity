@@ -1,112 +1,133 @@
-// src/pages/LoginPage.jsx
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, Mail, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase'; 
+import { ShieldCheck, Loader2, LayoutDashboard, UserCheck } from 'lucide-react';
 
 export const LoginPage = () => {
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState(''); 
+    
+    const { signIn } = useAuth();
+    const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setStatus('Authenticating...');
 
-    try {
-      // 1. Authenticate with Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+        try {
+            // 1. Sign In
+            const { data: authData, error: authError } = await signIn({ email, password });
+            if (authError) throw authError;
 
-      if (authError) throw authError;
+            // 2. Check Role & Profile
+            setStatus('Checking Clearance...');
+            
+            // --- DEBUG LOG START ---
+            console.log("Logged in User ID:", authData.user.id);
+            // --- DEBUG LOG END ---
 
-      // 2. CHECK THE ROLE from the Profiles table
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', authData.user.id)
-        .single();
+            if (authData?.user) {
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('username, role') 
+                    .eq('id', authData.user.id)
+                    .single();
 
-      if (profileError) {
-        console.error("Profile fetch error:", profileError);
-        // Fallback safety: If we can't find a profile, assume Agent
-        navigate('/agent'); 
-        return;
-      }
+                // --- DEBUG LOG START ---
+                console.log("Profile Data Found:", profile);
+                console.log("Profile Error (if any):", profileError);
+                // --- DEBUG LOG END ---
 
-      // 3. ROUTING LOGIC - The "Traffic Cop"
-      const userRole = profileData?.role || 'agent';
-      console.log("Login Successful. User Role:", userRole);
+                // 3. Role-Based Redirect
+                if (profile?.role === 'superadmin') {
+                    setStatus('Clearance: GOD MODE');
+                    setTimeout(() => navigate('/superadmin'), 800);
+                } 
+                else if (profile?.role === 'admin') {
+                    setStatus('Clearance: OPS ADMIN');
+                    setTimeout(() => navigate('/admin'), 800);
+                } 
+                else {
+                    // Default to Agent
+                    setStatus('Clearance: AGENT');
+                    setTimeout(() => navigate('/agent'), 800);
+                }
+            }
 
-      if (userRole === 'superadmin') {
-        navigate('/superadmin');
-      } else if (userRole === 'admin') {
-        navigate('/admin');
-      } else {
-        navigate('/agent');
-      }
+        } catch (error) {
+            console.error("Login Critical Error:", error);
+            alert(error.message);
+            setStatus('');
+        } finally {
+            setLoading(false);
+        }
+    };
 
-    } catch (error) {
-      alert(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    return (
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-xl border border-gray-200">
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200 transition-all duration-500">
+                        {loading ? (
+                            <UserCheck className="text-white animate-pulse" size={32} />
+                        ) : (
+                            <LayoutDashboard className="text-white" size={32} />
+                        )}
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900">Verity Portal</h1>
+                    <p className="text-gray-500 text-sm mt-1">Secure Entry</p>
+                </div>
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
-        <div className="text-center mb-8">
-          <div className="bg-emerald-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-600">
-            <Shield size={32} />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Project Verity</h1>
-          <p className="text-gray-500 mt-2">Secure Access Gateway</p>
+                <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Email</label>
+                        <input 
+                            type="email" 
+                            required 
+                            disabled={loading}
+                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition disabled:opacity-50"
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            placeholder="user@verity.ph"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Password</label>
+                        <input 
+                            type="password" 
+                            required 
+                            disabled={loading}
+                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition disabled:opacity-50"
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            placeholder="••••••••"
+                        />
+                    </div>
+                    
+                    <button 
+                        type="submit" 
+                        disabled={loading}
+                        className={`w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-lg ${
+                            loading 
+                            ? 'bg-blue-600 text-white cursor-wait' 
+                            : 'bg-gray-900 text-white hover:bg-black shadow-gray-200'
+                        }`}
+                    >
+                        {loading ? (
+                            <>
+                                <Loader2 className="animate-spin" size={18} /> 
+                                {status || 'Processing...'}
+                            </>
+                        ) : (
+                            <><ShieldCheck size={18} /> Sign In</>
+                        )}
+                    </button>
+                </form>
+            </div>
         </div>
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-3 text-gray-400" size={18} />
-              <input
-                type="email"
-                required
-                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                placeholder="agent@verity.ph"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 text-gray-400" size={18} />
-              <input
-                type="password"
-                required
-                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-slate-900 text-white p-3 rounded-xl font-bold hover:bg-slate-800 transition flex items-center justify-center gap-2"
-          >
-            {loading ? <Loader2 className="animate-spin" /> : "Sign In"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
+    );
 };

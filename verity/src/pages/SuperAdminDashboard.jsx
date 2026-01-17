@@ -1,12 +1,11 @@
-// src/pages/SuperAdminDashboard.jsx
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useNavigate } from 'react-router-dom'; // Import Navigation
-import { Users, Activity, Shield, UserPlus, Send, Loader2, CheckCircle, Trash2, ShieldAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; 
+import { Users, Activity, Shield, UserPlus, Send, Loader2, CheckCircle, Trash2, ShieldAlert, Copy, AlertTriangle } from 'lucide-react';
 import emailjs from '@emailjs/browser'; 
 
 export const SuperAdminDashboard = () => {
-  const navigate = useNavigate(); // Navigation hook
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,43 +15,37 @@ export const SuperAdminDashboard = () => {
   const [inviteRole, setInviteRole] = useState('agent');
   const [status, setStatus] = useState('idle'); 
 
+  // FALLBACK STATE (For Adblockers)
+  const [inviteResult, setInviteResult] = useState(null); 
+
   // ==========================================
-  // 1. SECURITY GUARD (THE NEW PART)
+  // 1. SECURITY GUARD
   // ==========================================
   useEffect(() => {
     const checkSecurity = async () => {
-      // A. Get the current user
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate('/login');
-        return;
-      }
+      if (!user) { navigate('/login'); return; }
 
-      // B. Check their role in the database
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single();
 
-      // C. KICK THEM OUT if they are not Super Admin
       if (error || !profile || profile.role !== 'superadmin') {
-        alert("⛔ SECURITY ALERT: You are not authorized to view this page.");
-        navigate('/agent'); // Send them back to safety
+        alert("⛔ SECURITY ALERT: Unauthorized.");
+        navigate('/agent'); 
         return;
       }
-
-      // D. If safe, load the data
       fetchUsers();
     };
-
     checkSecurity();
   }, [navigate]);
-  // ==========================================
 
-  // 2. FETCH REAL USERS
+  // ==========================================
+  // 2. FETCH USERS
+  // ==========================================
   const fetchUsers = async () => {
-    // We don't set loading true here anymore to avoid flickering during the security check
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -60,73 +53,105 @@ export const SuperAdminDashboard = () => {
     
     if (error) console.error('Error fetching users:', error);
     else setUsers(data || []);
-    setLoading(false); // Stop loading only after data is here
+    setLoading(false);
   };
 
-  // 3. REAL INVITE HANDLER (EmailJS Connected)
+  // ==========================================
+  // 3. ROBUST INVITE HANDLER (Adblocker Proof)
+  // ==========================================
   const handleInvite = async (e) => {
     e.preventDefault();
     setStatus('sending');
+    setInviteResult(null); // Reset previous results
 
     try {
       const tempPassword = Math.random().toString(36).slice(-8) + "Verity1!";
       
+      // A. Create User (Database Side - Adblockers can't stop this)
       const { data, error } = await supabase.auth.signUp({
         email: inviteEmail,
         password: tempPassword,
-        options: { data: { role: inviteRole } }
+        options: { 
+            data: { 
+                role: inviteRole,
+                email: inviteEmail 
+            } 
+        }
       });
 
       if (error) throw error;
 
+      // [FIX] EXPLICITLY SAVE EMAIL & ROLE 
+      // This ensures the email appears in your dashboard even if the DB trigger is slow
       if (data.user) {
-         await supabase.from('profiles').update({ role: inviteRole }).eq('id', data.user.id);
+         await supabase.from('profiles')
+             .update({ 
+                 role: inviteRole,
+                 email: inviteEmail 
+             })
+             .eq('id', data.user.id);
       }
 
-      await emailjs.send(
-        "service_5kg96fp",   
-        "template_r0l7qfb", 
-        {
-            to_email: inviteEmail,
-            role: inviteRole,
-            password: tempPassword,
-            login_link: "http://localhost:5173/login"
-        },
-        "83x_AdtLDpl8JUSaA"
-      );
+      // B. Try Sending Email (Client Side - Adblockers MIGHT stop this)
+      try {
+          await emailjs.send(
+            "service_5kg96fp",   // Replace with your Service ID
+            "template_r0l7qfb",  // Replace with your Template ID
+            {
+                to_email: inviteEmail,
+                role: inviteRole,
+                password: tempPassword,
+                login_link: "https://verity.ph/login"
+            },
+            "83x_AdtLDpl8JUSaA"  // Replace with your Public Key
+          );
+          
+          // Success Path
+          setStatus('success');
+          setInviteResult({ success: true, email: inviteEmail });
 
-      setStatus('success');
-      setTimeout(() => {
-        setStatus('idle');
-        setInviteEmail('');
-        fetchUsers();
-      }, 2000);
+      } catch (emailError) {
+          console.warn("Email blocked/failed:", emailError);
+          // Partial Success Path (User made, Email failed)
+          // We trigger the Manual UI so you can copy the password
+          setStatus('manual_required');
+          setInviteResult({ 
+              success: false, 
+              email: inviteEmail, 
+              password: tempPassword, 
+              role: inviteRole 
+          });
+      }
+
+      // Cleanup
+      setInviteEmail('');
+      fetchUsers();
 
     } catch (err) {
       console.error(err);
-      alert("Invite failed: " + err.message);
+      alert("Critical Error (User not created): " + err.message);
       setStatus('idle');
     }
   };
 
   const handleDelete = async (userId) => {
     if (!window.confirm("⚠️ WARNING: This will permanently delete the User and their Auth login.")) return;
-    
     try {
-      const { error } = await supabase.rpc('delete_user_account', { 
-        target_user_id: userId 
-      });
-
+      const { error } = await supabase.rpc('delete_user_account', { target_user_id: userId });
       if (error) throw error;
       alert("User deleted successfully.");
       fetchUsers(); 
     } catch (err) {
-      console.error(err);
       alert("Delete failed: " + err.message);
     }
   };
 
-  // 4. LOADING STATE (Shows while checking security)
+  const copyToClipboard = (text) => {
+      navigator.clipboard.writeText(text);
+      alert("Copied to clipboard!");
+  };
+
+  // 4. LOADING STATE
   if (loading) {
     return (
         <div className="min-h-screen bg-gray-100 flex items-center justify-center flex-col gap-3 text-gray-500">
@@ -166,18 +191,51 @@ export const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            {/* INVITE CARD */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden">
-              {status === 'success' && (
-                  <div className="absolute inset-0 bg-emerald-50/90 z-10 flex items-center justify-center backdrop-blur-sm animate-in fade-in">
-                      <div className="text-center">
-                          <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
-                          <h3 className="text-lg font-bold text-emerald-800">Invite Sent!</h3>
-                          <p className="text-emerald-600 text-sm">Credentials emailed to {inviteEmail}</p>
-                      </div>
-                  </div>
-              )}
+            {/* --- RESULT NOTIFICATIONS --- */}
+            {status === 'success' && (
+                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center gap-4 animate-in fade-in">
+                    <div className="p-2 bg-emerald-100 rounded-full text-emerald-600"><CheckCircle size={24}/></div>
+                    <div>
+                        <h4 className="font-bold text-emerald-800">Invite Sent Successfully</h4>
+                        <p className="text-sm text-emerald-600">Account created and credentials emailed to {inviteResult?.email}.</p>
+                    </div>
+                    <button onClick={() => setStatus('idle')} className="ml-auto text-sm font-bold text-emerald-700 hover:underline">Dismiss</button>
+                </div>
+            )}
 
+            {/* --- THE FALLBACK UI (If Adblocker Blocks Email) --- */}
+            {status === 'manual_required' && (
+                <div className="bg-amber-50 border border-amber-200 p-6 rounded-xl animate-in fade-in shadow-lg">
+                    <div className="flex items-start gap-4">
+                        <div className="p-2 bg-amber-100 rounded-full text-amber-600"><AlertTriangle size={24}/></div>
+                        <div className="flex-1">
+                            <h4 className="font-bold text-amber-800 text-lg">User Created, But Email Failed</h4>
+                            <p className="text-sm text-amber-700 mt-1">
+                                An adblocker or network issue blocked the email. 
+                                <span className="font-bold"> Please manually copy these credentials and send them to the user.</span>
+                            </p>
+                            
+                            <div className="mt-4 bg-white border border-amber-200 rounded-lg p-4 grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-400 uppercase">Email</label>
+                                    <div className="font-mono font-bold text-gray-800">{inviteResult?.email}</div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-400 uppercase">Temporary Password</label>
+                                    <div className="font-mono font-bold text-gray-800 flex items-center gap-2">
+                                        {inviteResult?.password}
+                                        <button onClick={() => copyToClipboard(inviteResult?.password)} className="text-blue-600 hover:text-blue-800"><Copy size={14}/></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button onClick={() => setStatus('idle')} className="text-gray-400 hover:text-gray-600"><Trash2 size={20}/></button>
+                    </div>
+                </div>
+            )}
+
+            {/* INVITE FORM */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden">
               <h3 className="font-bold text-gray-800 mb-5 flex items-center gap-2 text-lg">
                 <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
                     <UserPlus size={18}/> 
@@ -200,7 +258,7 @@ export const SuperAdminDashboard = () => {
                 </div>
 
                 <div className="flex-1 w-full space-y-1.5">
-                     <label className="text-xs font-bold text-gray-500 uppercase ml-1">Role</label>
+                      <label className="text-xs font-bold text-gray-500 uppercase ml-1">Role</label>
                     <select 
                         className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
                         value={inviteRole}

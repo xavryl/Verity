@@ -1,67 +1,81 @@
-// src/context/AuthContext.jsx
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
-const AuthContext = createContext();
+// 1. Create Context with a distinct default value for debugging
+const AuthContext = createContext({
+    debugStatus: 'DEFAULT_EMPTY_CONTEXT_ERROR' 
+});
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [orgId, setOrgId] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // DEBUG LOG
+  useEffect(() => { console.log('✅ AuthProvider MOUNTED'); }, []);
+
+  const fetchProfile = useCallback(async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      setProfile(prev => (JSON.stringify(prev) !== JSON.stringify(data) ? data : prev));
+    } catch (err) { console.error(err); } 
+    finally { setLoading(false); }
+  }, []);
+
   useEffect(() => {
-    // 1. Check active session
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        await fetchUserOrg(session.user.id);
-      }
-      setLoading(false);
-    };
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchProfile(session.user.id);
+      else setLoading(false);
+    });
 
-    getSession();
-
-    // 2. Listen for changes (login/logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-        await fetchUserOrg(session.user.id);
-      } else {
-        setUser(null);
-        setOrgId(null);
-      }
-      setLoading(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchProfile(session.user.id);
+      else { setProfile(null); setLoading(false); }
     });
 
     return () => subscription.unsubscribe();
+  }, [fetchProfile]);
+
+  const updateProfile = useCallback(async (updates) => {
+    // Allows updating even if user is momentarily desynced, by fetching ID fresh
+    const currentUser = (await supabase.auth.getUser()).data.user;
+    if (!currentUser) return { success: false, error: 'No active session' };
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: currentUser.id, ...updates });
+
+      if (error) throw error;
+      setProfile(prev => ({ ...prev, ...updates }));
+      return { success: true };
+    } catch (error) { return { success: false, error }; }
   }, []);
 
-  const fetchUserOrg = async (userId) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', userId)
-      .single();
-    
-    if (data) setOrgId(data.org_id);
-    if (error) console.error("Error fetching org:", error);
-  };
-
-  const signIn = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-  };
+  const value = useMemo(() => ({
+    debugStatus: 'CONNECTED', // Flag to prove connection
+    signUp: (data) => supabase.auth.signUp(data),
+    signIn: (data) => supabase.auth.signInWithPassword(data),
+    signOut: () => supabase.auth.signOut(),
+    user,
+    profile,
+    updateProfile,
+    loading
+  }), [user, profile, loading, updateProfile]);
 
   return (
-    <AuthContext.Provider value={{ user, orgId, signIn, signOut, loading }}>
+    <AuthContext.Provider value={value}>
       {!loading && children}
     </AuthContext.Provider>
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthContext);
