@@ -1,6 +1,6 @@
 // src/components/map/VerityMap.jsx
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../../lib/supabase'; // ✅ Ensure Supabase is imported
+import { supabase } from '../../lib/supabase';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMapEvents, Circle } from 'react-leaflet'; 
 import 'leaflet/dist/leaflet.css'; 
 import L from 'leaflet';
@@ -73,7 +73,7 @@ export const VerityMap = ({ customProperties, customAmenities }) => {
   // 1. URL & CONFIGURATION
   const queryParams = new URLSearchParams(window.location.search);
   const layoutParam = queryParams.get('layout');
-  const publicKeyParam = queryParams.get('k'); // 🟢 LOOK FOR PUBLIC KEY (?k=...)
+  const publicKeyParam = queryParams.get('k'); 
 
   // 2. INTERNAL STATE FOR IFRAME DATA
   const [publicProperties, setPublicProperties] = useState([]);
@@ -200,7 +200,8 @@ export const VerityMap = ({ customProperties, customAmenities }) => {
   useEffect(() => { if (isTransitMode && !transitShape) { const getTransitShape = async () => { const shape = await fetchRoute(TRANSIT_DATA.route17c); if (shape) setTransitShape(shape.path); }; getTransitShape(); } }, [isTransitMode, transitShape]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-gray-50/50">
+    // [FIX] 'fixed inset-0' ensures the map stays full screen and doesn't scroll with the page
+    <div className="fixed inset-0 w-full h-full overflow-hidden bg-gray-50/50">
       
       {/* LAYER 1: MAP */}
       <div style={{ ...getStyle('map'), pointerEvents: 'auto', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>

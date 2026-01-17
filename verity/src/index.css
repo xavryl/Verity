@@ -2,15 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* [FIX] Global scroll enabled */
 html, body, #root {
-  height: 100%;
   width: 100%;
+  min-height: 100vh;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Prevent iframe scrollbars */
+  /* NO overflow: hidden here! */
 }
 
-/* src/index.css */
 .leaflet-container {
     outline: none !important;
     border: none !important;

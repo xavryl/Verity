@@ -1,4 +1,3 @@
-// src/App.jsx
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { Loader2 } from 'lucide-react';
@@ -12,8 +11,6 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { LoginPage } from './pages/LoginPage';
 import { LandingPage } from './pages/LandingPage';
 
-// [1] THE BOUNCER (Security Guard)
-// This component checks if you are allowed to be here.
 const ProtectedRoute = ({ children }) => {
     const { user, loading } = useAuth();
     const location = useLocation();
@@ -27,7 +24,6 @@ const ProtectedRoute = ({ children }) => {
     }
 
     if (!user) {
-        // If not logged in, KICK THEM OUT to /login
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
@@ -36,51 +32,19 @@ const ProtectedRoute = ({ children }) => {
 
 function App() {
   return (
-    <div className="w-full h-screen bg-gray-50">
+    // [FIX] Changed h-screen to min-h-screen
+    // [FIX] Added overflow-x-hidden to prevent horizontal scrollbars
+    <div className="w-full min-h-screen bg-gray-50 overflow-x-hidden">
       <Routes>
-        {/* --- PUBLIC ROUTES (Anyone can see these) --- */}
         <Route path="/" element={<LandingPage />} /> 
         <Route path="/login" element={<LoginPage />} />
         <Route path="/map" element={<VerityMap />} /> 
 
-        {/* --- SECURE ROUTES (Wrapped in ProtectedRoute) --- */}
-        <Route 
-            path="/agent" 
-            element={
-                <ProtectedRoute>
-                    <AgentDashboard />
-                </ProtectedRoute>
-            } 
-        />
-
-        <Route 
-            path="/editor" 
-            element={
-                <ProtectedRoute>
-                    <EditorMap />
-                </ProtectedRoute>
-            } 
-        />
-
-        <Route 
-            path="/superadmin" 
-            element={
-                <ProtectedRoute>
-                    <SuperAdminDashboard />
-                </ProtectedRoute>
-            } 
-        />
-
-        <Route 
-            path="/admin" 
-            element={
-                <ProtectedRoute>
-                    <AdminDashboard />
-                </ProtectedRoute>
-            } 
-        />
+        <Route path="/agent" element={<ProtectedRoute><AgentDashboard /></ProtectedRoute>} />
+        <Route path="/editor" element={<ProtectedRoute><EditorMap /></ProtectedRoute>} />
+        <Route path="/superadmin" element={<ProtectedRoute><SuperAdminDashboard /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
         
-        {/* Catch-all: Send lost users to Home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

@@ -1,7 +1,7 @@
 // src/components/map/EditorMap.jsx
 import { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Polygon, Popup } from 'react-leaflet';
-import { supabase } from '../../lib/supabase'; // IMPORT SUPABASE
+import { supabase } from '../../lib/supabase';
 import 'leaflet/dist/leaflet.css';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
@@ -14,12 +14,11 @@ export const EditorMap = () => {
   const [lots, setLots] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  // 1. FETCH FROM SUPABASE (Replaces LocalStorage)
+  // 1. FETCH FROM SUPABASE
   useEffect(() => {
     const fetchLots = async () => {
         const { data, error } = await supabase.from('lots').select('*');
         if (!error && data) {
-            // Parse geometry if it's stored as text/json, or use directly if JSONB
             setLots(data); 
         }
     };
@@ -29,7 +28,6 @@ export const EditorMap = () => {
   // 2. SAVE TO SUPABASE
   const saveLotToDB = async (lot) => {
     setSaving(true);
-    // Upsert: Update if ID exists, Insert if new
     const { error } = await supabase.from('lots').upsert(lot);
     if (error) console.error("Save failed:", error);
     setSaving(false);
@@ -54,13 +52,12 @@ export const EditorMap = () => {
             drawPolygon: true,
             editMode: true,
             dragMode: true, 
-            cutPolygon: true, // ✅ ENABLED CUT TOOL
+            cutPolygon: true,
             removalMode: true,
             rotateMode: false,
         });
     }
 
-    // ENABLE SNAPPING (Critical for subdivisions)
     map.pm.setGlobalOptions({ snappable: true, snapDistance: 20 });
 
     // --- HANDLER: CREATION ---
@@ -69,34 +66,21 @@ export const EditorMap = () => {
       const shape = layer.toGeoJSON();
       
       const newLot = {
-        id: Date.now(), // Temp ID, Supabase will generate real one if we omit, but let's keep it simple
+        id: Date.now(),
         status: 'available',
         geometry: shape.geometry.coordinates,
-        price: 0 // Default
+        price: 0 
       };
 
       setLots(prev => [...prev, newLot]);
-      saveLotToDB(newLot); // Sync to DB
-      map.removeLayer(layer); // Remove raw layer, let React render it
+      saveLotToDB(newLot); 
+      map.removeLayer(layer);
     });
 
-    // --- HANDLER: CUTTING (The "Slicing" Logic) ---
+    // --- HANDLER: CUTTING ---
     map.on('pm:cut', (e) => {
-        const originalLayer = e.originalLayer;
-        const newLayers = e.layer.getLayers(); // The resulting pieces
-        
-        // 1. Remove the original big lot from DB & State
-        // We need to find which React-Lot corresponds to this Leaflet Layer
-        // (This is tricky in React-Leaflet. A simpler approach is to rely on visual editing)
-        
-        // FOR NOW: In "React Mode", the Cut Tool works best if we don't let React render the polygon *while* editing.
-        // But since we are rendering via <Polygon>, the "Cut" tool creates NEW temporary layers.
-        
-        // LOGIC:
-        // 1. The 'cut' event gives us new shapes.
-        // 2. We add those as NEW lots.
-        // 3. The User must manually delete the "Old" big lot using the Removal Tool (Trash Can), 
-        //    OR we assume the user cut the *selected* lot.
+        // const originalLayer = e.originalLayer;
+        const newLayers = e.layer.getLayers(); 
         
         newLayers.forEach(layer => {
             const shape = layer.toGeoJSON();
@@ -112,8 +96,7 @@ export const EditorMap = () => {
 
     // --- HANDLER: REMOVAL ---
     map.on('pm:remove', (e) => {
-        // This only fires for layers managed by PM. 
-        // Since we render via React, we handle deletion via the popup "Delete" button or custom UI.
+        // Handled via React UI mostly
     });
   };
 
@@ -126,7 +109,8 @@ export const EditorMap = () => {
   };
 
   return (
-    <div className="h-screen w-full relative">
+    // [FIX] 'fixed inset-0' ensures the map editor stays full screen and doesn't scroll
+    <div className="fixed inset-0 w-full h-full relative overflow-hidden">
       {/* HUD */}
       <div className="absolute top-4 right-4 z-[1000] bg-white p-4 rounded-xl shadow-xl">
         <h2 className="font-bold text-gray-900">Subdivision Editor</h2>
@@ -150,7 +134,7 @@ export const EditorMap = () => {
         zoom={16} 
         style={{ height: '100%', width: '100%' }}
         whenReady={onMapReady}
-        doubleClickZoom={false} // Disable to prevent conflict with drawing
+        doubleClickZoom={false} 
       >
         <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri"/>
 
@@ -165,11 +149,9 @@ export const EditorMap = () => {
                 }}
                 eventHandlers={{
                     click: () => toggleStatus(lot),
-                    // Allow Geoman to select this layer for cutting
                     add: (e) => {
                          if(mapRef.current) {
-                             // Register this layer with Geoman so it can be cut/edited
-                             // e.target.pm.enable(); 
+                             // Registration logic if needed
                          }
                     }
                 }}

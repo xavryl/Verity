@@ -1,22 +1,27 @@
-// src/pages/AdminDashboard.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { ShieldAlert, Loader2, MapPin, Database, Activity } from 'lucide-react';
-import { AmenitiesManager } from '../components/dashboard/AmenitiesManager'; // ✅ ADMIN ONLY
+import { AmenitiesManager } from '../components/dashboard/AmenitiesManager'; 
 
 export const AdminDashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [amenityCount, setAmenityCount] = useState(0);
 
+  // [1] Define this function outside useEffect so we can reuse it
+  const fetchStats = useCallback(async () => {
+      const { count } = await supabase.from('amenities').select('*', { count: 'exact', head: true });
+      setAmenityCount(count || 0);
+  }, []);
+
   useEffect(() => {
     const checkAccess = async () => {
-      // 1. Auth Check
+      // A. Auth Check
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { navigate('/login'); return; }
 
-      // 2. Role Check (Secure)
+      // B. Role Check
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
       
       if (!profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) {
@@ -25,20 +30,19 @@ export const AdminDashboard = () => {
         return;
       }
 
-      // 3. Fetch Stats
-      const { count } = await supabase.from('amenities').select('*', { count: 'exact', head: true });
-      setAmenityCount(count || 0);
-      
+      // C. Load Data
+      await fetchStats();
       setLoading(false);
     };
     checkAccess();
-  }, [navigate]);
+  }, [navigate, fetchStats]);
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-blue-600" size={32}/></div>;
 
   return (
+    // [FIX] min-h-screen allows the dashboard to grow vertically
     <div className="min-h-screen bg-gray-50 p-8 font-sans">
-      <div className="max-w-5xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-8">
         
         {/* HEADER */}
         <div>
@@ -67,7 +71,9 @@ export const AdminDashboard = () => {
         {/* AMENITIES UPLOAD SECTION */}
         <div className="space-y-4">
             <h2 className="text-lg font-bold text-gray-800">Infrastructure Management</h2>
-            <AmenitiesManager onUploadSuccess={() => window.location.reload()} />
+            
+            {/* [FIX] Instead of reloading the page, we just re-run the math function */}
+            <AmenitiesManager onUploadSuccess={fetchStats} />
         </div>
 
       </div>
