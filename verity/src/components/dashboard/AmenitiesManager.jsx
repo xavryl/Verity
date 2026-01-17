@@ -55,8 +55,9 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
   const [uploadingImage, setUploadingImage] = useState(false);
   
   // MANUAL FORM STATE
+  // [CHANGE] Default sub_category is now empty string for text input
   const [manualData, setManualData] = useState({
-    name: '', type: 'health', sub_category: 'Hospital', lat: '', lng: '', photo_url: '' 
+    name: '', type: 'health', sub_category: '', lat: '', lng: '', photo_url: '' 
   });
 
   // TABLE STATE
@@ -106,9 +107,13 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
       currentPage * itemsPerPage
   );
 
+  // [CHANGE] Dynamic Sub-Type Options based on ACTUAL DATA (so custom inputs show up)
   const availableSubTypes = useMemo(() => {
-      if (filterCategory !== 'all') { return CATEGORY_MAP[filterCategory] || []; }
-      const subs = new Set(rowData.map(r => r.sub_category).filter(Boolean));
+      const relevantRows = filterCategory === 'all' 
+          ? rowData 
+          : rowData.filter(r => r.type === filterCategory);
+      
+      const subs = new Set(relevantRows.map(r => r.sub_category).filter(Boolean));
       return Array.from(subs).sort();
   }, [filterCategory, rowData]);
 
@@ -132,8 +137,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
           setRowData(prev => prev.map(row => row.id === editingId ? { ...row, ...editFormData } : row));
           setEditingId(null);
           showToast("Changes saved!");
-          
-          // [FIX] Update Dashboard Count
           if(onUploadSuccess) onUploadSuccess();
       } catch (err) { alert("Update failed: " + err.message); }
   };
@@ -145,8 +148,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
           await supabase.from('amenities').delete().eq('id', id);
           setRowData(prev => prev.filter(r => r.id !== id));
           showToast("Deleted");
-
-          // [FIX] Update Dashboard Count
           if(onUploadSuccess) onUploadSuccess();
       } catch (err) { alert(err.message); }
   };
@@ -158,8 +159,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
           setRowData(prev => prev.filter(r => !selectedIds.includes(r.id)));
           setSelectedIds([]);
           showToast("Mass delete successful");
-
-          // [FIX] Update Dashboard Count
           if(onUploadSuccess) onUploadSuccess();
       } catch (err) { alert(err.message); }
   };
@@ -208,8 +207,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
           if (error) throw error;
           setRowData(prev => [...data, ...prev]);
           showToast(`Imported ${data.length} rows!`);
-          
-          // [FIX] Update Dashboard Count
           if(onUploadSuccess) onUploadSuccess();
       } catch (err) { alert("Import failed: " + err.message); } finally { setLoading(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
   };
@@ -246,8 +243,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
           if (error) throw error;
           setRowData(prev => [...data, ...prev]);
           showToast(`Pasted ${data.length} rows!`);
-          
-          // [FIX] Update Dashboard Count
           if(onUploadSuccess) onUploadSuccess();
       } catch (err) { alert(err.message); } finally { setLoading(false); }
   };
@@ -260,9 +255,10 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
       const newAmenity = { ...manualData, lat: parseFloat(manualData.lat), lng: parseFloat(manualData.lng) };
       const { data, error } = await supabase.from('amenities').insert([newAmenity]).select().single();
       if (error) throw error;
-      setRowData(prev => [data, ...prev]); showToast("Added!"); setManualData({ ...manualData, name: '', lat: '', lng: '', photo_url: '' }); 
+      setRowData(prev => [data, ...prev]); showToast("Added!"); 
       
-      // [FIX] Update Dashboard Count
+      // Reset form (including empty sub_category)
+      setManualData({ ...manualData, name: '', lat: '', lng: '', photo_url: '', sub_category: '' }); 
       if(onUploadSuccess) onUploadSuccess();
     } catch (err) { alert(err.message); } finally { setLoading(false); }
   };
@@ -279,8 +275,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
           setManualData(p => ({ ...p, photo_url: data.publicUrl }));
       } catch (e) { console.error(e); } finally { setUploadingImage(false); }
   };
-  
-  const subOptions = CATEGORY_MAP[manualData.type] || [];
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 relative min-h-[600px] flex flex-col">
@@ -317,8 +311,22 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
           <form onSubmit={handleManualSubmit} className="space-y-4">
              <div className="space-y-1"><label className="text-xs font-bold text-gray-500 uppercase">Amenity Name</label><input required type="text" className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" value={manualData.name} onChange={(e) => setManualData({...manualData, name: e.target.value})} /></div>
              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1"><label className="text-xs font-bold text-gray-500 uppercase">Category</label><select className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={manualData.type} onChange={(e) => setManualData({...manualData, type: e.target.value, sub_category: CATEGORY_MAP[e.target.value][0]})}>{Object.keys(CATEGORY_MAP).map(cat => <option key={cat} value={cat}>{cat.toUpperCase()}</option>)}</select></div>
-                <div className="space-y-1"><label className="text-xs font-bold text-gray-500 uppercase">Sub Type</label><select className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={manualData.sub_category} onChange={(e) => setManualData({...manualData, sub_category: e.target.value})}>{subOptions.map(sub => <option key={sub} value={sub}>{sub}</option>)}</select></div>
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Category</label>
+                    {/* [CHANGE] No longer updates sub-category automatically */}
+                    <select className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={manualData.type} onChange={(e) => setManualData({...manualData, type: e.target.value})}>{Object.keys(CATEGORY_MAP).map(cat => <option key={cat} value={cat}>{cat.toUpperCase()}</option>)}</select>
+                </div>
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Sub Type</label>
+                    {/* [CHANGE] Converted to Text Input */}
+                    <input 
+                        type="text" 
+                        placeholder="e.g. Clinic" 
+                        className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" 
+                        value={manualData.sub_category} 
+                        onChange={(e) => setManualData({...manualData, sub_category: e.target.value})} 
+                    />
+                </div>
              </div>
              <div className="space-y-1"><label className="text-xs font-bold text-gray-500 uppercase">Photo</label><div onClick={() => imageInputRef.current.click()} className="border-2 border-dashed p-4 rounded-xl text-center cursor-pointer hover:bg-gray-50"><input ref={imageInputRef} type="file" className="hidden" onChange={(e) => handleImageProcess(e.target.files)} /><div className="text-xs text-gray-400">{manualData.photo_url ? "Image Uploaded!" : "Click to Upload Image"}</div></div></div>
              <div className="grid grid-cols-2 gap-2"><input readOnly value={manualData.lat} placeholder="Lat" className="w-full p-2 bg-gray-50 border rounded text-xs"/><input readOnly value={manualData.lng} placeholder="Lng" className="w-full p-2 bg-gray-50 border rounded text-xs"/></div>
@@ -354,7 +362,7 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
                 <button onClick={() => { setFilterCategory('all'); setFilterSubType('all'); setSearchQuery(''); }} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Reset Filters"><RefreshCcw size={16}/></button>
             </div>
 
-            {/* TABLE CONTAINER - Fixed Height with Internal Scroll */}
+            {/* TABLE CONTAINER */}
             <div className="flex-1 border border-gray-200 rounded-xl shadow-sm bg-white h-[600px] overflow-auto relative">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50/95 sticky top-0 z-10 backdrop-blur-sm shadow-sm">
