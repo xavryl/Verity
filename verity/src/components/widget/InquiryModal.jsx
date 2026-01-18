@@ -1,10 +1,8 @@
-// src/components/widget/InquiryModal.jsx
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase'; // ✅ Use Supabase directly
+import { supabase } from '../../lib/supabase';
 import { X, Send, Loader2, CheckCircle2 } from 'lucide-react'; 
 
-// Added agentId prop so we know who gets the lead
-export const InquiryModal = ({ isOpen, onClose, propertyName, agentId }) => {
+export const InquiryModal = ({ isOpen, onClose, propertyName, propertyId, ownerId }) => {
   
   const [formData, setFormData] = useState({
     name: '',
@@ -28,25 +26,39 @@ export const InquiryModal = ({ isOpen, onClose, propertyName, agentId }) => {
     setStatus('submitting');
 
     try {
-        // 1. VALIDATION: Ensure we have an Agent to send to
-        if (!agentId) {
-            throw new Error("System Error: No Agent ID found for this property.");
+        if (!ownerId) {
+            alert("System Error: Property owner not found.");
+            setStatus('idle');
+            return;
         }
 
-        // 2. SEND TO DATABASE
-        const { error } = await supabase.from('leads').insert([{
-            agent_id: agentId, // 🟢 THIS ROUTES IT TO THE CORRECT CRM
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
+        // 1. SAVE TO DATABASE (Always save for record keeping)
+        await supabase.from('inquiries').insert([{
+            property_id: propertyId,
+            agent_id: ownerId, 
+            customer_name: formData.name,
+            customer_email: formData.email,
+            customer_phone: formData.phone,
             message: formData.message,
-            property_interest: propertyName,
             status: 'new'
         }]);
 
-        if (error) throw error;
+        // 2. CHECK OWNER PREFERENCE
+        const { data: owner } = await supabase
+            .from('profiles')
+            .select('email, crm_enabled')
+            .eq('id', ownerId)
+            .single();
 
-        // 3. SUCCESS
+        // 3. IF CRM IS OFF -> OPEN EMAIL CLIENT
+        if (owner && !owner.crm_enabled) {
+            const subject = `Inquiry: ${propertyName}`;
+            const body = `Hi,\n\nI am interested in ${propertyName}.\n\nMy Details:\nName: ${formData.name}\nPhone: ${formData.phone}\nEmail: ${formData.email}\n\nMessage: ${formData.message}`;
+            
+            // Use window.location to trigger mailto reliably
+            window.location.href = `mailto:${owner.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        }
+
         setStatus('success');
 
     } catch (err) {
@@ -60,7 +72,6 @@ export const InquiryModal = ({ isOpen, onClose, propertyName, agentId }) => {
     <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 relative">
         
-        {/* CLOSE BUTTON */}
         <button 
             onClick={handleClose} 
             className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1 rounded-full transition z-10"
@@ -68,7 +79,6 @@ export const InquiryModal = ({ isOpen, onClose, propertyName, agentId }) => {
             <X size={20} />
         </button>
 
-        {/* --- SUCCESS STATE --- */}
         {status === 'success' ? (
              <div className="p-10 flex flex-col items-center justify-center text-center animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
@@ -82,7 +92,6 @@ export const InquiryModal = ({ isOpen, onClose, propertyName, agentId }) => {
                 <button onClick={handleClose} className="w-full bg-gray-900 text-white font-bold py-3 rounded-xl hover:bg-black transition">Close</button>
              </div>
         ) : (
-            /* --- FORM STATE --- */
             <>
                 <div className="bg-violet-700 p-6 text-white pr-12">
                     <h3 className="text-xl font-bold">Inquire Now</h3>
