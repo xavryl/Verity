@@ -17,9 +17,19 @@ from tracery.modifiers import base_english
 load_dotenv()
 app = FastAPI()
 
+# --- CRITICAL FIX: CORS ALLOWED ORIGINS ---
+# This tells the server: "Trust requests coming from these websites"
+origins = [
+    "http://localhost:5173",            # Local testing
+    "http://127.0.0.1:5173",            # Local testing alternate
+    "https://verityph.space",           # Your Production Site
+    "https://www.verityph.space",       # Your Production Site (WWW version)
+    "https://verity-ai.onrender.com"    # The API itself
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=origins, 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,6 +39,7 @@ url = os.environ.get("SUPABASE_URL")
 key = os.environ.get("SUPABASE_KEY")
 supabase = create_client(url, key)
 
+# 2. CONFIGURATION
 CATEGORIES = {
     'safety': ['police', 'fire', 'barangay', 'station', 'security', 'outpost'],
     'health': ['hospital', 'clinic', 'pharmacy', 'vet', 'dental', 'medical'],
@@ -40,7 +51,7 @@ ai_brain = {}
 
 # --- TRACERY GRAMMAR (The Sentence Machine) ---
 grammar_source = {
-    # 1. BUILDING BLOCKS
+    # Building Blocks
     "opener": [
         "Forget the morning rush.",
         "Ditch the daily commute.",
@@ -75,7 +86,7 @@ grammar_source = {
     ],
     "connector": ["which means", "so", "giving you", "meaning"],
     
-    # 2. COMBO TEMPLATES
+    # Combo Templates (When 2 items are selected)
     "combo_headline": ["The Perfect Duo", "Double the Value", "Unmatched Convenience", "Connected Living", "Power Couple"],
     "combo_body": [
         "Enjoy the best of both worlds. You have easy access to {name1} while keeping {name2} #distance_adj#.",
@@ -84,7 +95,7 @@ grammar_source = {
         "The ultimate balance: {name1} for your needs, and {name2} for your lifestyle."
     ],
 
-    # 3. SPECIFIC PERSONA TEMPLATES
+    # Specific Persona Templates
     "student_headline": ["Walk to Class", "Campus Life", "Student Haven", "The Ultimate Hack"],
     "student_body": "#opener# {name} is #distance_adj#, #connector# #benefit_student#.",
 
@@ -102,7 +113,7 @@ grammar_source = {
     "default_body": "This property is situated in a prime area, with {name} #distance_adj#."
 }
 
-# --- LOGIC & GENERATOR ---
+# 3. BRAIN LOGIC
 def load_model():
     global ai_brain
     try:
@@ -148,6 +159,8 @@ def train_brain():
                 for cat, keywords in CATEGORIES.items():
                     if any(k in text for k in keywords):
                         scores[cat] += impact
+                        
+                        # SAVE CLEAN DATA FOR TRACERY
                         current_best = nearest_info[cat]
                         if current_best is None or dist < current_best['dist']:
                             type_name = str(amen.get('sub_category') or amen.get('type') or "Facility").title()
@@ -198,11 +211,11 @@ def generate_persuasive_copy(personas, data):
         'fitness': 'lifestyle', 'safety': 'safety', 'convenience': 'lifestyle'
     }
 
-    # 1. Initialize Tracery
+    # Initialize Tracery
     grammar = tracery.Grammar(grammar_source)
     grammar.add_modifiers(base_english)
 
-    # 2. Gather Candidates & Distances
+    # Gather Candidates
     matches = []
     for p in personas:
         cat = category_map.get(p, 'lifestyle')
@@ -216,7 +229,7 @@ def generate_persuasive_copy(personas, data):
     matches.sort(key=lambda x: x['dist'])
     close_matches = [m for m in matches if m['dist'] <= 1.5]
 
-    # --- LOGIC: COMBO ---
+    # LOGIC 1: COMBO (2 Winners)
     if len(close_matches) >= 2:
         m1 = close_matches[0]
         m2 = close_matches[1]
@@ -224,10 +237,10 @@ def generate_persuasive_copy(personas, data):
         body_template = grammar.flatten("#combo_body#")
         return headline, body_template.format(name1=m1['name'], name2=m2['name'])
 
-    # --- LOGIC: SINGLE ---
-    if not matches: return "Great Location", "Prime location."
+    # LOGIC 2: SINGLE WINNER
+    if not matches: return "Great Location", "Prime location with easy access to the city."
     
-    # Tie-Breaker Logic
+    # Tie-Breaker (Randomly pick if multiple are close)
     min_dist = matches[0]['dist']
     candidates = [m for m in matches if m['dist'] <= min_dist + 0.1]
     best_match = random.choice(candidates)
@@ -250,6 +263,7 @@ def generate_persuasive_copy(personas, data):
 def recommend(pref: UserPreference):
     if not ai_brain: raise HTTPException(status_code=503, detail="Training")
 
+    # Math Search
     user_vector = pd.DataFrame([[
         pref.safety_priority * 5.0,
         pref.health_priority * 5.0,
@@ -257,7 +271,7 @@ def recommend(pref: UserPreference):
         pref.lifestyle_priority * 5.0
     ]], columns=['safety', 'health', 'education', 'lifestyle'])
     
-    # NEW: Get up to 10 neighbors for filtering
+    # Get Top 10 Matches (for map filtering)
     n_matches = min(10, len(ai_brain['ids']))
     distances, indices = ai_brain['model'].kneighbors(user_vector, n_neighbors=n_matches)
     
@@ -266,7 +280,7 @@ def recommend(pref: UserPreference):
     
     headline, body = generate_persuasive_copy(pref.personas, nearest_data)
 
-    # Convert to Python int list for JSON
+    # Convert IDs to Python List
     matched_ids = [int(id) for id in ai_brain['ids'][indices[0]]]
 
     return {
@@ -282,6 +296,7 @@ def build_highlights(data):
     items = []
     for cat, info in data.items():
         if info and info['dist'] < 3.0: 
+             # FORMAT: "College is close (University of San Carlos) at 0.4km"
              items.append(f"{info['type']} is close ({info['specific_name']}) at {info['dist']:.1f}km")
     return items[:3]
 
