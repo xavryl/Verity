@@ -1,98 +1,79 @@
 import { useState } from 'react';
-import { Sparkles, X, Dumbbell, Dog, GraduationCap, ShieldCheck, ShoppingBag, BrainCircuit, ArrowRight } from 'lucide-react';
+import { 
+    Sparkles, X, Dumbbell, Dog, GraduationCap, ShieldCheck, 
+    ShoppingBag, BrainCircuit, ArrowRight, RotateCcw, Loader2 
+} from 'lucide-react';
 
-// --- HELPER: Simple Distance Math ---
-const getDistanceKm = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; 
-    const dLat = (lat2 - lat1) * (Math.PI/180);
-    const dLon = (lon2 - lon1) * (Math.PI/180);
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-    return R * c; 
-};
-
-export const LifestyleQuiz = ({ properties, amenities, onRecommend }) => {
+export const LifestyleQuiz = ({ properties, onRecommend }) => {
     const [isOpen, setIsOpen] = useState(true);
-    const [step, setStep] = useState('quiz'); // 'quiz' | 'result'
-    const [selectedTags, setSelectedTags] = useState([]);
-    const [bestMatch, setBestMatch] = useState(null);
+    const [step, setStep] = useState('quiz'); // 'quiz' | 'loading' | 'result'
+    const [selectedTag, setSelectedTag] = useState(null); 
+    const [result, setResult] = useState(null);
 
-    // --- LIFESTYLE PROFILES ---
+    // --- PROFILES ---
     const PROFILES = [
-        { id: 'fitness', label: 'Fitness Enthusiast', icon: Dumbbell, color: 'text-blue-500', bg: 'bg-blue-50', keywords: ['gym', 'sports', 'court', 'pool', 'fitness'] },
-        { id: 'pets', label: 'Pet Lover', icon: Dog, color: 'text-orange-500', bg: 'bg-orange-50', keywords: ['vet', 'veterinary', 'park', 'grooming', 'pet'] },
-        { id: 'family', label: 'Family Person', icon: GraduationCap, color: 'text-green-500', bg: 'bg-green-50', keywords: ['school', 'k-12', 'kindergarten', 'college', 'university', 'park'] },
-        { id: 'safety', label: 'Safety First', icon: ShieldCheck, color: 'text-red-500', bg: 'bg-red-50', keywords: ['police', 'fire', 'hospital', 'barangay'] },
-        { id: 'convenience', label: 'City Slicker', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50', keywords: ['mall', 'market', 'laundry', 'convenience', 'store', 'bank'] }
+        { id: 'fitness', label: 'Fitness', icon: Dumbbell, color: 'text-blue-500', bg: 'bg-blue-50' },
+        { id: 'pets', label: 'Pet Owner', icon: Dog, color: 'text-orange-500', bg: 'bg-orange-50' },
+        { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-500', bg: 'bg-green-50' },
+        { id: 'safety', label: 'Safety', icon: ShieldCheck, color: 'text-red-500', bg: 'bg-red-50' },
+        { id: 'convenience', label: 'Urban', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50' }
     ];
 
-    const toggleTag = (id) => {
-        setSelectedTags(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
-    };
+    // --- AI LOGIC ---
+    const runAnalysis = async () => {
+        if (!selectedTag) return;
+        
+        setStep('loading'); // Show spinner while Python thinks
 
-    // --- THE "AI" LOGIC ---
-    const calculateMatch = () => {
-        if (!properties.length || !amenities.length) return;
+        // 1. Map selection to a Vector
+        const payload = {
+            safety_priority: selectedTag === 'safety' ? 1.0 : 0.0,
+            health_priority: selectedTag === 'pets' ? 1.0 : 0.0, 
+            education_priority: selectedTag === 'family' ? 1.0 : 0.0,
+            lifestyle_priority: (selectedTag === 'fitness' || selectedTag === 'convenience') ? 1.0 : 0.0
+        };
 
-        let highestScore = -1;
-        let winner = null;
-        let analysisReport = ""; 
-        let matchDetails = []; 
-
-        properties.forEach(prop => {
-            let score = 0;
-            let foundCounts = {}; 
-
-            // 1. Scan Amenities
-            selectedTags.forEach(tagId => {
-                const profile = PROFILES.find(p => p.id === tagId);
-                amenities.forEach(a => {
-                    if (!a.lat || !a.lng) return;
-                    const dist = getDistanceKm(prop.lat, prop.lng, a.lat, a.lng);
-                    if (dist <= 1.5) { // 1.5km Radius
-                        const rawKey = (a.sub_category || a.name || a.type).toLowerCase();
-                        if (profile.keywords.some(k => rawKey.includes(k))) {
-                            score++;
-                            const type = a.sub_category || a.type || 'amenity';
-                            foundCounts[type] = (foundCounts[type] || 0) + 1;
-                        }
-                    }
-                });
+        try {
+            // 2. Call your Live Python Server
+            // NOTE: The first call might take ~45s if Render is "waking up". Subsequent calls are instant.
+            const response = await fetch('https://verity-ai.onrender.com/recommend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
+            
+            if (!response.ok) throw new Error("AI Server Error");
 
-            // 2. Determine Winner
-            if (score > highestScore) {
-                highestScore = score;
-                winner = prop;
-                
-                const itemsFound = Object.entries(foundCounts)
-                    .map(([key, count]) => `${count} ${key}${count > 1 ? 's' : ''}`)
-                    .slice(0, 3) 
-                    .join(", ");
-
-                if (itemsFound) {
-                    analysisReport = `Analysis complete. Optimal match detected based on proximity to ${itemsFound}.`;
-                    matchDetails = Object.keys(foundCounts).slice(0, 4);
-                } else {
-                    analysisReport = "Analysis complete. This property is the closest match to your selected criteria.";
-                }
+            const data = await response.json();
+            
+            // 3. Match the ID returned by Python with your local Property data
+            const winner = properties.find(p => p.id === data.property_id);
+            
+            if (winner) {
+                setResult({
+                    property: winner,
+                    score: data.match_score,
+                    explanation: data.ai_explanation
+                });
+                setStep('result');
+            } else {
+                alert("AI found a property, but it's not currently loaded on the map.");
+                setStep('quiz');
             }
-        });
-
-        if (winner) {
-            setBestMatch({ property: winner, score: highestScore, sentence: analysisReport, tags: matchDetails });
-            setStep('result');
-            // REMOVED: onRecommend(winner); <--- Stopped auto-opening
+        } catch (err) {
+            console.error("AI Connection Failed:", err);
+            alert("AI Engine is currently offline or waking up. Please try again in a moment.");
+            setStep('quiz');
         }
     };
 
     const handleViewProperty = () => {
-        if (bestMatch?.property) {
-            onRecommend(bestMatch.property);
+        if (result?.property) {
+            onRecommend(result.property);
         }
     };
 
+    // --- MINIMIZED BUTTON ---
     if (!isOpen) {
         return (
             <button 
@@ -100,22 +81,23 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend }) => {
                 className="absolute top-4 right-4 z-[1000] bg-white text-gray-900 px-4 py-2.5 rounded-full shadow-xl font-bold text-xs flex items-center gap-2 hover:scale-105 transition-transform border border-gray-100"
             >
                 <Sparkles size={16} className="text-violet-600" /> 
-                Find My Match
+                AI Matcher
             </button>
         );
     }
 
+    // --- MAIN WIDGET ---
     return (
-        <div className="absolute top-4 right-4 z-[1000] w-[320px] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 overflow-hidden animate-in fade-in zoom-in duration-300">
+        <div className="absolute top-4 right-4 z-[1000] w-[300px] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 overflow-hidden animate-in fade-in zoom-in duration-300">
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 p-4 text-white flex justify-between items-start">
+            <div className="bg-gray-900 p-4 text-white flex justify-between items-start">
                 <div>
                     <h3 className="font-bold text-sm flex items-center gap-2">
-                        <BrainCircuit size={16} /> Verity AI Matcher
+                        <BrainCircuit size={16} className="text-violet-400" /> Lifestyle AI
                     </h3>
-                    <p className="text-[10px] text-violet-100 opacity-90 mt-1">
-                        Select your lifestyle preferences below.
+                    <p className="text-[10px] text-gray-400 mt-1">
+                        Powered by Vector Analysis
                     </p>
                 </div>
                 <button onClick={() => setIsOpen(false)} className="bg-white/10 hover:bg-white/20 p-1 rounded-full transition">
@@ -123,23 +105,25 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend }) => {
                 </button>
             </div>
 
-            {/* Content */}
-            <div className="p-5">
-                {step === 'quiz' ? (
+            {/* Content Body */}
+            <div className="p-4">
+                
+                {/* STATE: QUIZ SELECTION */}
+                {step === 'quiz' && (
                     <>
-                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">I am looking for...</p>
-                        <div className="flex flex-wrap gap-2 mb-6">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Select Priority Vector</p>
+                        <div className="grid grid-cols-2 gap-2 mb-4">
                             {PROFILES.map(profile => {
-                                const isSelected = selectedTags.includes(profile.id);
+                                const isSelected = selectedTag === profile.id;
                                 return (
                                     <button
                                         key={profile.id}
-                                        onClick={() => toggleTag(profile.id)}
+                                        onClick={() => setSelectedTag(profile.id)}
                                         className={`
-                                            flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-bold transition-all
+                                            flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px] font-bold transition-all text-left
                                             ${isSelected 
                                                 ? `${profile.bg} ${profile.color} border-${profile.color.split('-')[1]}-200 ring-1 ring-${profile.color.split('-')[1]}-400` 
-                                                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}
+                                                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}
                                         `}
                                     >
                                         <profile.icon size={14} />
@@ -149,45 +133,65 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend }) => {
                             })}
                         </div>
                         <button 
-                            onClick={calculateMatch}
-                            disabled={selectedTags.length === 0}
+                            onClick={runAnalysis}
+                            disabled={!selectedTag}
                             className={`
-                                w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all
-                                ${selectedTags.length > 0 
-                                    ? 'bg-gray-900 text-white hover:bg-black shadow-lg shadow-gray-200' 
+                                w-full py-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all
+                                ${selectedTag 
+                                    ? 'bg-violet-600 text-white hover:bg-violet-700 shadow-md' 
                                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
                             `}
                         >
-                            <Sparkles size={14} /> Run Analysis
+                            <Sparkles size={14} /> Run Model
                         </button>
                     </>
-                ) : (
+                )}
+
+                {/* STATE: LOADING (Thinking) */}
+                {step === 'loading' && (
+                    <div className="py-8 text-center">
+                        <Loader2 size={32} className="text-violet-600 animate-spin mx-auto mb-3" />
+                        <p className="text-xs font-bold text-gray-900">Analyzing Database...</p>
+                        <p className="text-[10px] text-gray-500 mt-1">Calculating vector proximity</p>
+                    </div>
+                )}
+
+                {/* STATE: RESULT */}
+                {step === 'result' && (
                     <div className="text-center">
-                        <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <Sparkles size={24} />
+                        <div className="mb-3 flex items-center justify-center gap-2">
+                            <span className="text-[10px] uppercase font-bold text-gray-400">Match ID:</span>
+                            <span className="text-xs font-mono bg-gray-100 px-2 rounded text-gray-700">
+                                {result?.property.id.slice(0, 8)}...
+                            </span>
                         </div>
-                        <h4 className="font-bold text-gray-900 text-sm">Best Match Found</h4>
                         
-                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-left my-4 relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                            <span className="block text-xs font-bold text-gray-900 mb-2">{bestMatch?.property.name}</span>
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 text-left mb-3">
+                            <div className="flex justify-between items-start mb-2">
+                                <span className="block text-sm font-bold text-gray-900 truncate pr-2">{result?.property.name}</span>
+                                <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0">
+                                    {(result?.score * 100).toFixed(0)}%
+                                </span>
+                            </div>
+
                             <p className="text-[11px] text-gray-600 leading-relaxed font-medium">
-                                {bestMatch?.sentence}
+                                {result?.explanation}
                             </p>
                         </div>
 
                         <div className="flex gap-2">
                             <button 
                                 onClick={() => setStep('quiz')}
-                                className="flex-1 py-3 text-xs font-bold text-gray-500 hover:bg-gray-50 rounded-xl border border-gray-200"
+                                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg border border-gray-200"
+                                title="Reset"
                             >
-                                Back
+                                <RotateCcw size={16} />
                             </button>
                             <button 
                                 onClick={handleViewProperty}
-                                className="flex-1 py-3 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-black shadow-lg flex items-center justify-center gap-2"
+                                className="flex-1 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-black shadow-md flex items-center justify-center gap-2"
                             >
-                                View Property <ArrowRight size={14} />
+                                Locate on Map <ArrowRight size={14} />
                             </button>
                         </div>
                     </div>
