@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import random
 
 # 1. SETUP
 load_dotenv()
@@ -26,12 +27,11 @@ url = os.environ.get("SUPABASE_URL")
 key = os.environ.get("SUPABASE_KEY")
 supabase = create_client(url, key)
 
-# 2. CONFIGURATION
 CATEGORIES = {
-    'safety': ['police', 'fire', 'barangay', 'station'],
-    'health': ['hospital', 'clinic', 'pharmacy', 'vet', 'dental', 'health'],
-    'education': ['school', 'college', 'university', 'k-12', 'campus'],
-    'lifestyle': ['gym', 'mall', 'market', 'park', 'cafe', 'shop', 'store']
+    'safety': ['police', 'fire', 'barangay', 'station', 'security'],
+    'health': ['hospital', 'clinic', 'pharmacy', 'vet', 'dental'],
+    'education': ['school', 'college', 'university', 'k-12'],
+    'lifestyle': ['gym', 'mall', 'market', 'park', 'cafe', 'restaurant']
 }
 
 ai_brain = {}
@@ -48,117 +48,147 @@ def load_model():
     except Exception as e:
         print(f"❌ Error loading brain: {e}")
 
-# --- IMPROVED TRAINER ---
 def train_brain():
     global ai_brain
     print("\n🔄 RETRAINING STARTED...")
-    
-    # 1. Fetch Data
     try:
         props = supabase.table('properties').select("*").execute()
         amens = supabase.table('amenities').select("*").execute()
-    except Exception as e:
-        print(f"❌ Supabase Connection Error: {e}")
-        return False
+    except Exception: return False
 
     properties = pd.DataFrame(props.data)
     amenities = pd.DataFrame(amens.data)
+    if properties.empty: return False
 
-    if properties.empty:
-        print("❌ No properties found in database.")
-        return False
-    
-    print(f"   > Loaded {len(properties)} properties and {len(amenities)} amenities.")
-    
-    # DEBUG: Check columns
-    print(f"   > Amenity Columns found: {list(amenities.columns)}")
+    feature_rows = []
+    metadata_list = []
 
-    # 2. Calculate Vectors (RAW SCORES)
-    def calculate_vector(prop_row):
+    for _, prop_row in properties.iterrows():
         scores = {cat: 0.0 for cat in CATEGORIES.keys()}
-        
+        nearest_info = {cat: None for cat in CATEGORIES.keys()} 
+        prop_loc = (prop_row['lat'], prop_row['lng'])
+
         for _, amen in amenities.iterrows():
             try:
-                # Validate coordinates
                 if pd.isna(prop_row.get('lat')) or pd.isna(amen.get('lat')): continue
-                
-                prop_loc = (prop_row['lat'], prop_row['lng'])
                 amen_loc = (amen['lat'], amen['lng'])
                 dist = geodesic(prop_loc, amen_loc).km
+                if dist > 8.0: continue # Search wide for context
                 
-                # RADIUS: 5km
-                if dist > 5.0: continue
-                
-                # SCORING: Closer = Higher
-                # 0.1km = 1.6 points | 5.0km = 0.18 points
                 impact = 1 / (dist + 0.5)
-                
-                # TEXT MATCHING (Robust)
-                # We combine all useful text columns to ensure we catch the keyword
-                text_parts = [
-                    str(amen.get('sub_category', '')),
-                    str(amen.get('type', '')),
-                    str(amen.get('name', ''))
-                ]
-                text = " ".join(text_parts).lower()
+                text = " ".join([str(amen.get(c, '')) for c in ['sub_category', 'type', 'name']]).lower()
                 
                 for cat, keywords in CATEGORIES.items():
                     if any(k in text for k in keywords):
                         scores[cat] += impact
-            except Exception as e:
-                continue
+                        current_best = nearest_info[cat]
+                        if current_best is None or dist < current_best['dist']:
+                            name = amen.get('name') or amen.get('sub_category') or "Facility"
+                            nearest_info[cat] = {'name': name, 'dist': dist}
+            except: continue
         
-        return pd.Series(scores)
+        feature_rows.append(pd.Series(scores))
+        metadata_list.append(nearest_info)
 
-    feature_matrix = properties.apply(calculate_vector, axis=1)
-
-    # DEBUG: Show non-zero scores to prove it worked
-    print("\n   > Sample Scores (Top 3):")
-    print(feature_matrix.head(3))
-
-    # 3. Train Model (NO SCALER - We use raw scores now)
-    # This prevents the "fake 100%" issue
+    feature_matrix = pd.DataFrame(feature_rows)
     model = NearestNeighbors(n_neighbors=1, algorithm='brute', metric='euclidean')
     model.fit(feature_matrix)
 
     new_brain = {
         'model': model,
-        'property_ids': properties['id'].values,
-        'property_names': properties['name'].values,
-        'feature_data': feature_matrix # Save raw scores
+        'ids': properties['id'].values,
+        'names': properties['name'].values,
+        'features': feature_matrix,
+        'metadata': metadata_list
     }
     
     joblib.dump(new_brain, 'verity_model.pkl')
     ai_brain = new_brain
-    print("✅ RETRAINING COMPLETE.\n")
+    print("✅ RETRAINING COMPLETE.")
     return True
 
 @app.on_event("startup")
 async def startup_event():
     load_model()
 
-@app.get("/")
-def home():
-    return {"status": "Online", "brain_loaded": bool(ai_brain)}
-
 @app.post("/retrain")
 def trigger_retrain(background_tasks: BackgroundTasks):
     background_tasks.add_task(train_brain)
-    return {"message": "Training started. Check terminal logs for DEBUG info."}
+    return {"message": "Training started."}
 
 class UserPreference(BaseModel):
+    persona: str # 'family', 'pets', 'retirement', 'fitness', 'investor'
+    # We keep these for vector math, but use persona for text generation
     safety_priority: float
     health_priority: float
     education_priority: float
     lifestyle_priority: float
 
+# --- THE PERSUASION ENGINE ---
+def generate_persuasive_copy(persona, data):
+    # This function acts like a Copywriter
+    headline = "Great Match"
+    body = "This property fits your criteria."
+    
+    # 1. RETIREMENT PERSONA (Values Peace + Health)
+    if persona == 'retirement':
+        lifestyle_dist = data['lifestyle']['dist'] if data['lifestyle'] else 10.0
+        health_dist = data['health']['dist'] if data['health'] else 10.0
+        
+        if lifestyle_dist > 2.0:
+            headline = "Peaceful & Secluded"
+            body = "Perfect for retirement—this property is tucked away from the noise and chaos of the city center, offering a quiet, slower pace of life."
+        else:
+            headline = "Convenient Retirement"
+            body = "Enjoy your golden years with total convenience—everything you need is just a short walk away."
+            
+        if health_dist < 3.0:
+            body += f" Plus, for peace of mind, {data['health']['name']} is just a short drive away."
+
+    # 2. FAMILY PERSONA (Values Schools + Safety)
+    elif persona == 'family':
+        school_dist = data['education']['dist'] if data['education'] else 10.0
+        
+        if school_dist < 1.0:
+            headline = "Walk to School"
+            body = f"Imagine saving hours in daily traffic. {data['education']['name']} is close enough for your kids to walk, giving you more quality family time."
+        elif school_dist < 3.0:
+            headline = "Family-Friendly Zone"
+            body = "A secure, family-oriented neighborhood with reputable schools just a quick school-bus ride away."
+        else:
+            headline = "Spacious Family Living"
+            body = "A quiet, safe environment perfect for raising children, away from the crowded downtown areas."
+
+    # 3. PETS PERSONA (Values Vets/Open Space)
+    elif persona == 'pets':
+        health_dist = data['health']['dist'] if data['health'] else 10.0
+        # Assuming 'health' captures Vets based on our keywords
+        
+        if health_dist < 2.0:
+            headline = "Pet-Lover's Haven"
+            body = f"Ideal for fur-parents! You have easy access to veterinary care at {data['health']['name']}, ensuring your pets are always safe."
+        else:
+            headline = "Open Spaces for Pets"
+            body = "This location offers the breathing room your pets need to run and play, far from the cramped congestion of the city."
+
+    # 4. FITNESS/LIFESTYLE PERSONA (Values Gyms/Malls)
+    elif persona == 'fitness' or persona == 'convenience':
+        life_dist = data['lifestyle']['dist'] if data['lifestyle'] else 10.0
+        
+        if life_dist < 1.0:
+            headline = "Active Lifestyle Ready"
+            body = f"Stay consistent with your goals! {data['lifestyle']['name']} is right at your doorstep, making it easy to hit the gym or grab a healthy meal."
+        else:
+            headline = "Private Wellness Sanctuary"
+            body = "Your own private escape. Perfect for setting up a home gym and focusing on wellness without the distractions of a busy commercial district."
+
+    return headline, body
+
 @app.post("/recommend")
 def recommend(pref: UserPreference):
-    if not ai_brain:
-        raise HTTPException(status_code=503, detail="AI is training")
+    if not ai_brain: raise HTTPException(status_code=503, detail="Training")
 
-    # User wants this vector (High numbers since we removed scaler)
-    # We multiply by 5.0 to match the raw score magnitude
+    # 1. Find Property (Math)
     user_vector = np.array([[
         pref.safety_priority * 5.0,
         pref.health_priority * 5.0,
@@ -167,47 +197,28 @@ def recommend(pref: UserPreference):
     ]])
     
     distances, indices = ai_brain['model'].kneighbors(user_vector, n_neighbors=1)
-    
     idx = indices[0][0]
-    best_id = ai_brain['property_ids'][idx]
-    best_name = ai_brain['property_names'][idx]
+    nearest_data = ai_brain['metadata'][idx]
     
-    # Generate Explanation & Percentage
-    scores = ai_brain['feature_data'].iloc[idx]
-    
-    # Calculate True Match % based on the requested category
-    # If user asked for Safety, we check Safety score.
-    max_requested = max(pref.safety_priority, pref.health_priority, pref.education_priority, pref.lifestyle_priority)
-    relevant_score = 0.0
-    
-    reasons = []
-    if pref.safety_priority > 0: 
-        relevant_score += scores['safety']
-        if scores['safety'] > 0.5: reasons.append("Safety")
-    if pref.lifestyle_priority > 0: 
-        relevant_score += scores['lifestyle']
-        if scores['lifestyle'] > 0.5: reasons.append("Lifestyle")
-    if pref.education_priority > 0: 
-        relevant_score += scores['education']
-        if scores['education'] > 0.5: reasons.append("Education")
-    if pref.health_priority > 0: 
-        relevant_score += scores['health']
-        if scores['health'] > 0.5: reasons.append("Healthcare")
-
-    # Logic: If Score > 2.0 (approx 2 amenities nearby), it's a 100% match
-    match_percentage = min(relevant_score / 2.0, 1.0)
-    
-    if len(reasons) == 0:
-        explanation = "Best available match, though amenities are distant."
-    else:
-        explanation = f"Great match for {', '.join(reasons)}."
+    # 2. Generate Text (Persuasion)
+    headline, body = generate_persuasive_copy(pref.persona, nearest_data)
 
     return {
-        "property_id": best_id,
-        "property_name": best_name,
-        "match_score": match_percentage, # Returns 0.0 to 1.0
-        "ai_explanation": explanation
+        "property_id": ai_brain['ids'][idx],
+        "property_name": ai_brain['names'][idx],
+        "ai_headline": headline,
+        "ai_body": body,
+        # We still send the nearest items for the list, but no percentages
+        "nearest_highlights": build_highlights(nearest_data)
     }
+
+def build_highlights(data):
+    # Simplified list
+    items = []
+    for cat, info in data.items():
+        if info and info['dist'] < 3.0: # Only show things that are actually close
+             items.append(f"{info['name']} ({info['dist']:.1f}km)")
+    return items[:3] # Limit to top 3
 
 if __name__ == "__main__":
     import uvicorn
