@@ -17,35 +17,62 @@ import { WidgetBuilder } from '../components/dashboard/WidgetBuilder';
 import { VerityMap } from '../components/map/VerityMap'; 
 import './AgentDashboard.css';
 
-// --- OVERVIEW PANEL (FIXED HEIGHT) ---
+// --- OVERVIEW PANEL (UPDATED) ---
 const OverviewPanel = ({ profile }) => {
+    // We construct the public URL for the "Open Full Screen" button
     const mapUrl = `${window.location.origin}/map${profile?.public_key ? `?k=${profile.public_key}` : ''}`;
-    const [myProperties, setMyProperties] = useState([]);
-    useEffect(() => { const fetchMyProps = async () => { if (!profile?.id) return; const { data } = await supabase.from('properties').select('*').eq('user_id', profile.id); if (data) setMyProperties(data); }; fetchMyProps(); }, [profile]);
     
     return (
         <div className="h-full flex flex-col p-6 overflow-hidden">
             <div className="flex justify-between items-end mb-6 shrink-0">
-                <div><h1 className="text-2xl font-bold text-gray-900">Map Preview</h1><p className="text-gray-500 text-sm mt-1">This is exactly what your clients will see.</p></div>
-                {profile?.public_key && (<a href={mapUrl} target="_blank" rel="noreferrer" className="px-4 py-2 bg-violet-50 text-violet-700 font-bold rounded-xl hover:bg-violet-100 flex items-center gap-2 transition border border-violet-100"><ExternalLink size={16} /> Open Full Screen</a>)}
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Map Preview</h1>
+                    <p className="text-gray-500 text-sm mt-1">This is exactly what your clients will see.</p>
+                </div>
+                {profile?.public_key && (
+                    <a href={mapUrl} target="_blank" rel="noreferrer" className="px-4 py-2 bg-violet-50 text-violet-700 font-bold rounded-xl hover:bg-violet-100 flex items-center gap-2 transition border border-violet-100">
+                        <ExternalLink size={16} /> Open Full Screen
+                    </a>
+                )}
             </div>
             
-            {/* [FIX] Changed flex-1 to fixed height h-[600px] to prevent 0px collapse */}
+            {/* MAP CONTAINER */}
             <div className="w-full h-[600px] bg-gray-900 rounded-2xl shadow-xl border border-gray-200 overflow-hidden relative group shrink-0">
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-black/70 backdrop-blur text-white px-4 py-1.5 rounded-full text-xs font-bold pointer-events-none opacity-0 group-hover:opacity-100 transition duration-500">Interact to test your map</div>
-                <VerityMap isEmbedded={true} customProperties={myProperties} />
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-black/70 backdrop-blur text-white px-4 py-1.5 rounded-full text-xs font-bold pointer-events-none opacity-0 group-hover:opacity-100 transition duration-500">
+                    Interact to test your map
+                </div>
+                
+                {/* [FIX] Removed 'customProperties'. 
+                   By letting VerityMap fetch data itself, it will grab BOTH properties 
+                   AND amenities, ensuring the 'Essentials' feature works.
+                */}
+                <VerityMap isEmbedded={true} />
             </div>
 
             <div className="grid grid-cols-3 gap-4 mt-6 shrink-0">
-                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4"><div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center"><MapIcon size={20}/></div><div><p className="text-2xl font-bold">Live</p><p className="text-xs text-gray-400 font-bold uppercase">Status</p></div></div>
-                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4"><div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center"><Users size={20}/></div><div><p className="text-2xl font-bold">Public</p><p className="text-xs text-gray-400 font-bold uppercase">Access</p></div></div>
-                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4"><div className="w-10 h-10 bg-violet-50 text-violet-600 rounded-lg flex items-center justify-center"><CheckCircle2 size={20}/></div><div><p className="text-2xl font-bold">Ready</p><p className="text-xs text-gray-400 font-bold uppercase">Integrations</p></div></div>
+                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center"><MapIcon size={20}/></div>
+                    <div><p className="text-2xl font-bold">Live</p><p className="text-xs text-gray-400 font-bold uppercase">Status</p></div>
+                 </div>
+                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center"><Users size={20}/></div>
+                    <div><p className="text-2xl font-bold">Public</p><p className="text-xs text-gray-400 font-bold uppercase">Access</p></div>
+                 </div>
+                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                    <div className="w-10 h-10 bg-violet-50 text-violet-600 rounded-lg flex items-center justify-center"><CheckCircle2 size={20}/></div>
+                    <div><p className="text-2xl font-bold">Ready</p><p className="text-xs text-gray-400 font-bold uppercase">Integrations</p></div>
+                 </div>
             </div>
         </div>
     );
 };
 
-const NavBtn = ({ icon: IconComponent, label, isActive, onClick, badge }) => (<button onClick={onClick} className={`sidebar-nav-btn ${isActive ? 'active' : 'inactive'}`}><div className="nav-btn-content"><IconComponent size={18} />{label}</div>{badge && <span className="badge-red">{badge}</span>}</button>);
+const NavBtn = ({ icon: IconComponent, label, isActive, onClick, badge }) => (
+    <button onClick={onClick} className={`sidebar-nav-btn ${isActive ? 'active' : 'inactive'}`}>
+        <div className="nav-btn-content"><IconComponent size={18} />{label}</div>
+        {badge && <span className="badge-red">{badge}</span>}
+    </button>
+);
 
 // --- MAIN DASHBOARD EXPORT ---
 export const AgentDashboard = () => {

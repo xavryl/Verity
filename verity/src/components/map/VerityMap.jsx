@@ -4,8 +4,9 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
+import { LifestyleQuiz } from '../widget/LifestyleQuiz'; // <--- IMPORT THIS
 
-// --- ICON FIXES ---
+// --- ICONS ---
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -22,10 +23,22 @@ const createIcon = (color) => new L.Icon({
 const Icons = {
     property: createIcon('blue'),
     selected: createIcon('gold'),
-    amenity: createIcon('red')
+    amenity: createIcon('red'),
+    essential: createIcon('violet') 
 };
 
-// --- HELPERS ---
+// --- HELPER: Haversine Distance ---
+const getDistanceKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; 
+    const dLat = (lat2 - lat1) * (Math.PI/180);
+    const dLon = (lon2 - lon1) * (Math.PI/180);
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    return R * c; 
+};
+
+// --- CONTROLLERS ---
 const MapInvalidator = () => {
     const map = useMap();
     useEffect(() => {
@@ -71,6 +84,7 @@ const fetchRoute = async (start, end) => {
     return null;
 };
 
+// --- MAIN COMPONENT ---
 export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     const [properties, setProperties] = useState([]);
     const [amenities, setAmenities] = useState([]);
@@ -79,7 +93,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     const [selectedAmenity, setSelectedAmenity] = useState(null);
     const [routeData, setRouteData] = useState(null);
 
-    // --- CONFIG & CSS LOADER ---
+    // --- CONFIG LOADER ---
     useEffect(() => {
         const loadConfig = async () => {
             const params = new URLSearchParams(window.location.search);
@@ -131,11 +145,47 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         loadData();
     }, [customProperties]);
 
-    const visibleAmenities = useMemo(() => {
-        if (!selectedProp || !activeFilter) return [];
-        return amenities.filter(a => a.type === activeFilter);
-    }, [selectedProp, activeFilter, amenities]);
+    // --- SMART ESSENTIALS CALCULATOR ---
+    const essentialAmenities = useMemo(() => {
+        if (!selectedProp || !amenities.length) return [];
+        const LIMITS = {
+            'police': 2, 'barangay': 1, 'barangay hall': 1, 'fire': 1,
+            'hospital': 3, 'clinic': 3, 'college': 5, 'university': 5,
+            'school': 5, 'k-12': 5, 'market': 3, 'public market': 3
+        };
+        const results = [];
+        const usedIds = new Set(); 
 
+        Object.keys(LIMITS).forEach(keyword => {
+            const limit = LIMITS[keyword];
+            const matches = amenities.filter(a => {
+                const rawKey = (a.sub_category || a.name || a.type).toLowerCase();
+                return rawKey.includes(keyword) && a.lat && a.lng;
+            });
+            matches.sort((a, b) => {
+                const distA = getDistanceKm(selectedProp.lat, selectedProp.lng, a.lat, a.lng);
+                const distB = getDistanceKm(selectedProp.lat, selectedProp.lng, b.lat, b.lng);
+                return distA - distB;
+            });
+            const nearest = matches.slice(0, limit);
+            nearest.forEach(item => {
+                if (!usedIds.has(item.id)) {
+                    usedIds.add(item.id);
+                    results.push(item);
+                }
+            });
+        });
+        return results;
+    }, [selectedProp, amenities]);
+
+    // --- VISIBILITY ---
+    const visibleAmenities = useMemo(() => {
+        if (!selectedProp) return [];
+        if (activeFilter) return amenities.filter(a => a.type === activeFilter);
+        return essentialAmenities;
+    }, [selectedProp, activeFilter, amenities, essentialAmenities]);
+
+    // --- HANDLERS ---
     const handlePropSelect = (prop) => {
         setSelectedProp(prop); setActiveFilter(null); setRouteData(null); setSelectedAmenity(null);
     };
@@ -149,6 +199,11 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
 
     const handleClose = () => {
         setSelectedProp(null); setRouteData(null); setSelectedAmenity(null); setActiveFilter(null);
+    };
+
+    // --- AI RECOMMENDATION HANDLER ---
+    const handleRecommendation = (recommendedProp) => {
+        handlePropSelect(recommendedProp);
     };
 
     return (
@@ -170,7 +225,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
                 ))}
 
                 {visibleAmenities.map(amen => (
-                    <Marker key={`amen-${amen.id}`} position={[amen.lat, amen.lng]} icon={Icons.amenity}
+                    <Marker key={`amen-${amen.id}`} position={[amen.lat, amen.lng]} icon={activeFilter ? Icons.amenity : Icons.essential}
                         eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); handleAmenityClick(amen); } }}>
                         <Popup offset={[0, -30]}>
                             <div className="text-center min-w-[120px]">
@@ -189,9 +244,19 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
                 ))}
             </MapContainer>
 
+            {/* --- AI LIFESTYLE MATCHER (Top Right) --- */}
+            {/* Only show if NO property is currently selected, to reduce clutter */}
+            {!selectedProp && (
+                <LifestyleQuiz 
+                    properties={properties} 
+                    amenities={amenities} 
+                    onRecommend={handleRecommendation} 
+                />
+            )}
+
             <UnifiedPanel 
                 property={selectedProp} 
-                amenities={amenities} // <--- Added this prop
+                essentialAmenities={essentialAmenities} 
                 onClose={handleClose} 
                 activeFilter={activeFilter} 
                 onFilterChange={setActiveFilter} 

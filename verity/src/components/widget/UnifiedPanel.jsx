@@ -1,32 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { X, MapPin, ArrowRight, Shield, Heart, GraduationCap, Bus, ShoppingBag, Moon, Store, Building2, AlertCircle } from 'lucide-react';
+import { X, MapPin, ArrowRight, Shield, Heart, GraduationCap, Bus, ShoppingBag, Moon } from 'lucide-react';
 
-// --- HELPER: Haversine Distance (in km) ---
-const getDistanceKm = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
-    const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon2 - lon1);
-    const a = 
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-    return R * c; // Distance in km
-};
-
-const deg2rad = (deg) => deg * (Math.PI/180);
-
-export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, onFilterChange }) => {
-  // --- STATE ---
+export const UnifiedPanel = ({ property, essentialAmenities = [], onClose, activeFilter, onFilterChange }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const [sheetState, setSheetState] = useState('peek'); // 'peek' | 'expanded'
-  
-  // --- DRAG STATE ---
+  const [sheetState, setSheetState] = useState('peek');
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartY = useRef(0);
   const sheetRef = useRef(null);
 
-  // --- CONFIG ---
   const FILTERS = [
     { id: 'safety', label: 'Safety', icon: Shield, color: 'text-red-600', bg: 'bg-red-50', activeBg: 'bg-red-600' },
     { id: 'health', label: 'Health', icon: Heart, color: 'text-pink-600', bg: 'bg-pink-50', activeBg: 'bg-pink-600' },
@@ -36,30 +18,48 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
     { id: 'faith', label: 'Faith', icon: Moon, color: 'text-violet-600', bg: 'bg-violet-50', activeBg: 'bg-violet-600' },
   ];
 
-  // --- NEARBY SUMMARY LOGIC ---
+  const PRIORITY_KEYS = {
+    'police': 'Police Station',
+    'barangay': 'Barangay Hall',
+    'barangay hall': 'Barangay Hall',
+    'fire': 'Fire Station',
+    'fire station': 'Fire Station',
+    'hospital': 'Hospital',
+    'clinic': 'Clinic',
+    'college': 'College / Univ.',
+    'university': 'College / Univ.',
+    'school': 'K-12 Education',
+    'k-12': 'K-12 Education',
+    'market': 'Public Market',
+    'public market': 'Public Market'
+  };
+
+  // --- COUNT SUMMARIES ---
+  // We just count the list provided by VerityMap (which is already limited to Top 2, Top 3, etc.)
   const nearbySummary = useMemo(() => {
-    if (!property || !amenities.length) return null;
+    if (!essentialAmenities || !essentialAmenities.length) return null;
 
-    // 1. Filter amenities within 3km
-    const nearby = amenities.filter(a => {
-        const dist = getDistanceKm(property.lat, property.lng, a.lat, a.lng);
-        return dist <= 3.0; // 3km Radius
-    });
-
-    // 2. Group by Sub-Category (or Type if sub-cat is missing)
     const counts = {};
-    nearby.forEach(a => {
-        // Use sub_category if available, otherwise fallback to type
-        const key = a.sub_category || a.type; 
-        // Normalize Key (Capitalize first letter)
-        const displayKey = key.charAt(0).toUpperCase() + key.slice(1);
-        counts[displayKey] = (counts[displayKey] || 0) + 1;
+    essentialAmenities.forEach(a => {
+        const rawKey = (a.sub_category || a.name || a.type).toLowerCase();
+        let displayLabel = null;
+        
+        // Find the matching label
+        for (const [key, label] of Object.entries(PRIORITY_KEYS)) {
+            if (rawKey.includes(key)) {
+                displayLabel = label;
+                break;
+            }
+        }
+        
+        if (displayLabel) {
+            counts[displayLabel] = (counts[displayLabel] || 0) + 1;
+        }
     });
 
     return counts;
-  }, [property, amenities]);
+  }, [essentialAmenities]);
 
-  // --- ANIMATION LIFECYCLE ---
   useEffect(() => {
     let timer;
     if (property) {
@@ -74,10 +74,8 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
     return () => clearTimeout(timer);
   }, [property]);
 
-  // --- TOUCH HANDLERS ---
   const handleTouchStart = (e) => {
-    const target = e.target;
-    if (target.closest('.no-drag')) return; 
+    if (e.target.closest('.no-drag')) return; 
     setIsDragging(true);
     dragStartY.current = e.touches[0].clientY;
   };
@@ -86,8 +84,7 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
     if (!isDragging) return;
     if (sheetState === 'expanded' && e.target.closest('.scroll-content') && sheetRef.current.scrollTop > 0) return; 
     if (e.cancelable && !e.target.closest('.scroll-content')) e.preventDefault();
-    const currentY = e.touches[0].clientY;
-    setDragOffset(currentY - dragStartY.current);
+    setDragOffset(e.touches[0].clientY - dragStartY.current);
   };
 
   const handleTouchEnd = () => {
@@ -102,17 +99,14 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
     setDragOffset(0);
   };
 
-  // --- TRANSFORM ---
   const getTransform = () => {
       if (typeof window !== 'undefined' && window.innerWidth >= 768) {
           return isVisible ? 'translateX(0)' : 'translateX(-100%)';
       }
       if (!isVisible) return 'translateY(100%)';
-      
       const peekTransform = 'calc(100% - 320px)'; 
       const expandedTransform = '0px';
       let base = sheetState === 'peek' ? peekTransform : expandedTransform;
-
       if (isDragging) return `translateY(calc(${base} + ${dragOffset}px))`;
       return `translateY(${base})`;
   };
@@ -141,7 +135,6 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
             transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
         }}
       >
-        {/* --- [MOBILE] DRAG HANDLE & CHIPS --- */}
         <div 
             className="md:hidden bg-white shrink-0 border-b border-gray-100"
             onTouchStart={handleTouchStart}
@@ -151,7 +144,6 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
             <div className="flex justify-center pt-3 pb-1">
                 <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
             </div>
-
             <div className="py-3 pl-6 no-drag">
                 <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                     What's Nearby?
@@ -181,7 +173,6 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
             </div>
         </div>
 
-        {/* --- HEADER IMAGE --- */}
         <div 
             className="relative h-48 md:h-64 shrink-0 bg-gray-100 group cursor-grab active:cursor-grabbing"
             onTouchStart={handleTouchStart}
@@ -194,14 +185,12 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
                 className="w-full h-full object-cover touch-none"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
-
             <button 
                 onClick={onClose}
                 className="hidden md:block absolute top-5 right-5 bg-black/20 hover:bg-black/40 text-white p-2 rounded-full backdrop-blur-md transition-all z-20"
             >
                 <X size={20} />
             </button>
-
             <div className="absolute bottom-0 left-0 right-0 p-5 text-white pointer-events-none">
                 <div className="flex items-start justify-between gap-4">
                     <div>
@@ -219,7 +208,6 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
             </div>
         </div>
 
-        {/* --- [DESKTOP] CHIPS --- */}
         <div className="hidden md:block sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-gray-100 py-4 pl-6">
             <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Explore Nearby</h3>
             <div className="flex gap-2 overflow-x-auto pb-2 pr-6 scrollbar-hide">
@@ -242,10 +230,7 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
             </div>
         </div>
 
-        {/* --- SCROLL CONTENT --- */}
         <div className="flex-1 overflow-y-auto bg-white p-6 space-y-6 scroll-content">
-            
-            {/* 1. KEY FEATURES */}
             <div className="grid grid-cols-3 gap-3">
                 <div className="bg-gray-50 border border-gray-100 p-3 rounded-2xl text-center">
                     <span className="block font-bold text-lg text-gray-900">{property?.specs?.beds || 0}</span>
@@ -261,18 +246,17 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
                 </div>
             </div>
 
-            {/* 2. NEARBY HIGHLIGHTS (Dynamic) */}
-            {/* Only shows if NO specific filter is active */}
+            {/* --- NEARBY HIGHLIGHTS (The New Section) --- */}
             {!activeFilter && nearbySummary && Object.keys(nearbySummary).length > 0 && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                     <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wide mb-3 flex items-center gap-2">
-                        <MapPin size={14} className="text-blue-500"/> Within 3km Radius
+                        <MapPin size={14} className="text-emerald-500"/> Essentials Nearby
                     </h3>
                     <div className="grid grid-cols-2 gap-2">
                         {Object.entries(nearbySummary).map(([name, count]) => (
-                            <div key={name} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg border border-gray-100">
-                                <span className="text-xs text-gray-600 font-medium truncate pr-2">{name}</span>
-                                <span className="bg-white text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded border border-gray-200 shadow-sm">
+                            <div key={name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 hover:border-emerald-200 transition-colors cursor-default">
+                                <span className="text-xs text-gray-600 font-bold truncate pr-2">{name}</span>
+                                <span className="bg-white text-gray-900 text-[10px] font-extrabold px-2 py-0.5 rounded border border-gray-200 shadow-sm min-w-[24px] text-center">
                                     {count}
                                 </span>
                             </div>
@@ -281,7 +265,6 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
                 </div>
             )}
 
-            {/* 3. DESCRIPTION */}
             <div>
                 <h3 className="font-bold text-gray-900 text-sm mb-2">Description</h3>
                 <p className="text-sm text-gray-600 leading-relaxed pb-8">
@@ -290,7 +273,6 @@ export const UnifiedPanel = ({ property, amenities = [], onClose, activeFilter, 
             </div>
         </div>
 
-        {/* --- FOOTER --- */}
         <div className="p-4 border-t border-gray-100 bg-white shrink-0 safe-area-bottom">
             <button className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl hover:bg-black transition-all flex items-center justify-center gap-2 shadow-lg active:scale-[0.98]">
                 Inquire Now <ArrowRight size={18} />
