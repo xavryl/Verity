@@ -188,11 +188,19 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         return essentialAmenities;
     }, [selectedProp, activeFilter, amenities, essentialAmenities]);
 
-    // NEW: Visible Properties (Filtered by AI)
+    // --- NEW LOGIC: HIDE OTHERS ON SELECTION ---
     const visibleProperties = useMemo(() => {
-        if (!filteredIds) return properties; // Show all if no AI filter
+        // 1. If a property is selected, ONLY show that one
+        if (selectedProp) {
+            return [selectedProp];
+        }
+        
+        // 2. If no selection, check for AI filters
+        if (!filteredIds) return properties; 
+        
+        // 3. Otherwise show filtered list
         return properties.filter(p => filteredIds.includes(p.id));
-    }, [properties, filteredIds]);
+    }, [properties, filteredIds, selectedProp]); // Added selectedProp dependency
 
     // --- HANDLERS ---
     const handlePropSelect = (prop) => {
@@ -224,7 +232,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
 
                 {routeData && <Polyline positions={routeData.path} color="#3b82f6" weight={5} opacity={0.8} dashArray="1, 10" lineCap="round" />}
 
-                {/* Iterate over visibleProperties (AI Filtered) */}
+                {/* Iterate over visibleProperties (Now hides unselected ones) */}
                 {visibleProperties.map(prop => (
                     prop.lat && prop.lng && (
                         <Marker key={`prop-${prop.id}`} position={[prop.lat, prop.lng]} icon={selectedProp?.id === prop.id ? Icons.selected : Icons.property}
@@ -255,7 +263,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
             </MapContainer>
 
             {/* --- AI LIFESTYLE MATCHER (Top Right) --- */}
-            {/* Condition Removed: Always Visible */}
             <LifestyleQuiz 
                 properties={properties} 
                 onRecommend={handleRecommendation} 
