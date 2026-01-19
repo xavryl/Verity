@@ -19,13 +19,24 @@ const pinIcon = new L.Icon({
   iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
 });
 
+// 1. UPDATE: Correct Keys to match Database (e.g., 'daily living')
 const CATEGORY_MAP = {
     health: ['Hospital', 'Clinic', 'Dental', 'Vet', 'Pharmacy', 'Gym'],
     education: ['School', 'University', 'Kindergarten', 'Training Center', 'Library'],
     transit: ['Bus Station', 'Train', 'Airport', 'Ferry', 'Parking'],
     safety: ['Police', 'Fire Station', 'Barangay Hall', 'CCTV Hub'],
-    living: ['Mall', 'Supermarket', 'Park', 'Restaurant', 'Hotel'],
+    'daily living': ['Mall', 'Supermarket', 'Park', 'Restaurant', 'Hotel'], 
     faith: ['Church', 'Mosque', 'Temple', 'Chapel']
+};
+
+// 2. UPDATE: Nice Labels for the Dropdown
+const CATEGORY_LABELS = {
+    health: 'Health',
+    education: 'Education',
+    transit: 'Transport',
+    safety: 'Safety',
+    'daily living': 'Daily Living',
+    faith: 'Faith'
 };
 
 const MapClicker = ({ onLocationSelect }) => {
@@ -55,7 +66,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
   const [uploadingImage, setUploadingImage] = useState(false);
   
   // MANUAL FORM STATE
-  // [CHANGE] Default sub_category is now empty string for text input
   const [manualData, setManualData] = useState({
     name: '', type: 'health', sub_category: '', lat: '', lng: '', photo_url: '' 
   });
@@ -94,10 +104,17 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
 
   // --- TABLE LOGIC: FILTER & PAGINATION ---
   const filteredData = rowData.filter(row => {
+      // Search Check
       const matchesSearch = row.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             row.sub_category?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = filterCategory === 'all' || row.type === filterCategory;
+      
+      // Category Check (Case Insensitive)
+      const matchesCategory = filterCategory === 'all' || 
+                              row.type?.toLowerCase() === filterCategory.toLowerCase();
+      
+      // SubType Check
       const matchesSubType = filterSubType === 'all' || row.sub_category === filterSubType;
+      
       return matchesSearch && matchesCategory && matchesSubType;
   });
 
@@ -107,11 +124,11 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
       currentPage * itemsPerPage
   );
 
-  // [CHANGE] Dynamic Sub-Type Options based on ACTUAL DATA (so custom inputs show up)
+  // Dynamic Sub-Type Options based on ACTUAL DATA
   const availableSubTypes = useMemo(() => {
       const relevantRows = filterCategory === 'all' 
           ? rowData 
-          : rowData.filter(r => r.type === filterCategory);
+          : rowData.filter(r => r.type?.toLowerCase() === filterCategory.toLowerCase());
       
       const subs = new Set(relevantRows.map(r => r.sub_category).filter(Boolean));
       return Array.from(subs).sort();
@@ -257,7 +274,6 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
       if (error) throw error;
       setRowData(prev => [data, ...prev]); showToast("Added!"); 
       
-      // Reset form (including empty sub_category)
       setManualData({ ...manualData, name: '', lat: '', lng: '', photo_url: '', sub_category: '' }); 
       if(onUploadSuccess) onUploadSuccess();
     } catch (err) { alert(err.message); } finally { setLoading(false); }
@@ -313,12 +329,10 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 uppercase">Category</label>
-                    {/* [CHANGE] No longer updates sub-category automatically */}
-                    <select className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={manualData.type} onChange={(e) => setManualData({...manualData, type: e.target.value})}>{Object.keys(CATEGORY_MAP).map(cat => <option key={cat} value={cat}>{cat.toUpperCase()}</option>)}</select>
+                    <select className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={manualData.type} onChange={(e) => setManualData({...manualData, type: e.target.value})}>{Object.keys(CATEGORY_MAP).map(cat => <option key={cat} value={cat}>{CATEGORY_LABELS[cat] || cat.toUpperCase()}</option>)}</select>
                 </div>
                 <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 uppercase">Sub Type</label>
-                    {/* [CHANGE] Converted to Text Input */}
                     <input 
                         type="text" 
                         placeholder="e.g. Clinic" 
@@ -343,23 +357,38 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
             <div className="flex flex-wrap items-center gap-3 bg-white p-1 rounded-xl">
                 <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                    <input type="text" placeholder="Search amenities..." className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                    <input 
+                        type="text" 
+                        placeholder="Search amenities..." 
+                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" 
+                        value={searchQuery} 
+                        onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} 
+                    />
                 </div>
                 <div className="relative min-w-[140px]">
                     <div className="absolute left-3 top-2.5 text-gray-400 pointer-events-none"><Filter size={14} /></div>
-                    <select className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 appearance-none cursor-pointer" value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setFilterSubType('all'); }}>
+                    <select 
+                        className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 appearance-none cursor-pointer" 
+                        value={filterCategory} 
+                        onChange={(e) => { setFilterCategory(e.target.value); setFilterSubType('all'); setCurrentPage(1); }}
+                    >
                         <option value="all">All Categories</option>
-                        {Object.keys(CATEGORY_MAP).map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                        {Object.keys(CATEGORY_MAP).map(c => <option key={c} value={c}>{CATEGORY_LABELS[c] || c.toUpperCase()}</option>)}
                     </select>
                 </div>
                 <div className="relative min-w-[140px]">
                     <div className="absolute left-3 top-2.5 text-gray-400 pointer-events-none"><Filter size={14} /></div>
-                    <select disabled={filterCategory === 'all' && availableSubTypes.length === 0} className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 appearance-none cursor-pointer disabled:opacity-50" value={filterSubType} onChange={(e) => setFilterSubType(e.target.value)}>
+                    <select 
+                        disabled={filterCategory === 'all' && availableSubTypes.length === 0} 
+                        className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 appearance-none cursor-pointer disabled:opacity-50" 
+                        value={filterSubType} 
+                        onChange={(e) => { setFilterSubType(e.target.value); setCurrentPage(1); }}
+                    >
                         <option value="all">All Sub-Types</option>
                         {availableSubTypes.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                 </div>
-                <button onClick={() => { setFilterCategory('all'); setFilterSubType('all'); setSearchQuery(''); }} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Reset Filters"><RefreshCcw size={16}/></button>
+                <button onClick={() => { setFilterCategory('all'); setFilterSubType('all'); setSearchQuery(''); setCurrentPage(1); }} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Reset Filters"><RefreshCcw size={16}/></button>
             </div>
 
             {/* TABLE CONTAINER */}
@@ -385,7 +414,7 @@ export const AmenitiesManager = ({ onUploadSuccess }) => {
                                 {editingId === row.id ? (
                                     <>
                                         <td className="p-3"><input className="w-full p-1 border rounded text-sm" value={editFormData.name} onChange={(e) => setEditFormData({...editFormData, name: e.target.value})} /></td>
-                                        <td className="p-3"><select className="w-full p-1 border rounded text-sm" value={editFormData.type} onChange={(e) => setEditFormData({...editFormData, type: e.target.value})}>{Object.keys(CATEGORY_MAP).map(c => <option key={c} value={c}>{c}</option>)}</select></td>
+                                        <td className="p-3"><select className="w-full p-1 border rounded text-sm" value={editFormData.type} onChange={(e) => setEditFormData({...editFormData, type: e.target.value})}>{Object.keys(CATEGORY_MAP).map(c => <option key={c} value={c}>{CATEGORY_LABELS[c] || c.toUpperCase()}</option>)}</select></td>
                                         <td className="p-3"><input className="w-full p-1 border rounded text-sm" value={editFormData.sub_category} onChange={(e) => setEditFormData({...editFormData, sub_category: e.target.value})} /></td>
                                         <td className="p-3"><input type="number" className="w-20 p-1 border rounded text-sm" value={editFormData.lat} onChange={(e) => setEditFormData({...editFormData, lat: e.target.value})} /></td>
                                         <td className="p-3"><input type="number" className="w-20 p-1 border rounded text-sm" value={editFormData.lng} onChange={(e) => setEditFormData({...editFormData, lng: e.target.value})} /></td>
