@@ -17,13 +17,13 @@ from tracery.modifiers import base_english
 load_dotenv()
 app = FastAPI()
 
-# --- CORS SETUP ---
+# --- CORS SETUP (The VIP List) ---
 origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://verityph.space",
-    "https://www.verityph.space",
-    "https://verity-ai.onrender.com"
+    "http://localhost:5173",            # Local Dev
+    "http://127.0.0.1:5173",            # Local Dev Alternate
+    "https://verityph.space",           # Production Domain
+    "https://www.verityph.space",       # Production WWW
+    "https://verity-ai.onrender.com"    # The API Itself
 ]
 
 app.add_middleware(
@@ -48,8 +48,9 @@ CATEGORIES = {
 
 ai_brain = {}
 
-# --- TRACERY GRAMMAR ---
+# --- TRACERY GRAMMAR (The Sentence Machine) ---
 grammar_source = {
+    # Building Blocks
     "opener": [
         "Forget the morning rush.", "Ditch the daily commute.",
         "Why waste time in traffic?", "The smartest move you can make?",
@@ -73,6 +74,7 @@ grammar_source = {
     ],
     "connector": ["which means", "so", "giving you", "meaning"],
     
+    # Combo Templates (When 2 items are selected)
     "combo_headline": ["The Perfect Duo", "Double the Value", "Unmatched Convenience", "Connected Living", "Power Couple"],
     "combo_body": [
         "Enjoy the best of both worlds. You have easy access to {name1} while keeping {name2} #distance_adj#.",
@@ -81,6 +83,7 @@ grammar_source = {
         "The ultimate balance: {name1} for your needs, and {name2} for your lifestyle."
     ],
 
+    # Specific Persona Templates
     "student_headline": ["Walk to Class", "Campus Life", "Student Haven", "The Ultimate Hack"],
     "student_body": "#opener# {name} is #distance_adj#, #connector# #benefit_student#.",
     "fitness_headline": ["Active Lifestyle", "Gym-Goer's Dream", "Wellness Central"],
@@ -230,10 +233,18 @@ def generate_persuasive_copy(personas, data):
     body_template = grammar.flatten(body_rule)
     return headline, body_template.format(name=best_match['name'])
 
+def build_highlights(data):
+    items = []
+    for cat, info in data.items():
+        if info and info['dist'] < 3.0: 
+             items.append(f"{info['type']} is close ({info['specific_name']}) at {info['dist']:.1f}km")
+    return items[:3]
+
 @app.post("/recommend")
 def recommend(pref: UserPreference):
     if not ai_brain: raise HTTPException(status_code=503, detail="Training")
 
+    # 1. Math Search
     user_vector = pd.DataFrame([[
         pref.safety_priority * 5.0,
         pref.health_priority * 5.0,
@@ -241,33 +252,39 @@ def recommend(pref: UserPreference):
         pref.lifestyle_priority * 5.0
     ]], columns=['safety', 'health', 'education', 'lifestyle'])
     
+    # 2. Get Top 10 Matches
     n_matches = min(10, len(ai_brain['ids']))
     distances, indices = ai_brain['model'].kneighbors(user_vector, n_neighbors=n_matches)
     
-    best_idx = indices[0][0]
-    nearest_data = ai_brain['metadata'][best_idx]
-    
-    headline, body = generate_persuasive_copy(pref.personas, nearest_data)
+    # 3. Generate Details for ALL 10
+    results = []
+    matched_ids = []
 
-    # --- CRITICAL FIX: REMOVE int() ---
-    # UUIDs are strings. We just pass them as strings.
-    matched_ids = [str(id) for id in ai_brain['ids'][indices[0]]]
+    for i in range(n_matches):
+        idx = indices[0][i]
+        
+        # --- FIXED: Use String for UUIDs ---
+        prop_id = str(ai_brain['ids'][idx]) 
+        
+        prop_name = ai_brain['names'][idx]
+        metadata = ai_brain['metadata'][idx]
+        
+        # Generate unique copy for THIS property
+        headline, body = generate_persuasive_copy(pref.personas, metadata)
+        
+        results.append({
+            "id": prop_id,
+            "name": prop_name,
+            "headline": headline,
+            "body": body,
+            "highlights": build_highlights(metadata)
+        })
+        matched_ids.append(prop_id)
 
     return {
-        "property_id": ai_brain['ids'][best_idx],
-        "property_name": ai_brain['names'][best_idx],
-        "ai_headline": headline,
-        "ai_body": body,
-        "nearest_highlights": build_highlights(nearest_data),
-        "matched_ids": matched_ids 
+        "matches": results,
+        "matched_ids": matched_ids
     }
-
-def build_highlights(data):
-    items = []
-    for cat, info in data.items():
-        if info and info['dist'] < 3.0: 
-             items.append(f"{info['type']} is close ({info['specific_name']}) at {info['dist']:.1f}km")
-    return items[:3]
 
 if __name__ == "__main__":
     import uvicorn
