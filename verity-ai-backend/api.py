@@ -272,13 +272,13 @@ def generate_persuasive_copy(persona, data):
 def recommend(pref: UserPreference):
     if not ai_brain: raise HTTPException(status_code=503, detail="Training")
 
-    # Math Search
-    user_vector = np.array([[
+    # Math Search (Fixed to silence warnings)
+    user_vector = pd.DataFrame([[
         pref.safety_priority * 5.0,
         pref.health_priority * 5.0,
         pref.education_priority * 5.0,
         pref.lifestyle_priority * 5.0
-    ]])
+    ]], columns=['safety', 'health', 'education', 'lifestyle'])
     
     distances, indices = ai_brain['model'].kneighbors(user_vector, n_neighbors=1)
     idx = indices[0][0]
