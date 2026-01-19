@@ -6,57 +6,78 @@ import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
 import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
 
-// --- 1. CUSTOM ICON MAPPING ---
-// Maps the "Amenity Type" from your database to your actual filenames
+// --- 1. PRECISE ICON MAPPING ---
+// This matches the EXACT filenames from your screenshot
 const AMENITY_ICONS = {
     'bank': 'Bank.png',
     'barangay': 'Barangay Hall.png',
     'barangay hall': 'Barangay Hall.png',
+    'blood bank': 'Blood Bank.png',
     'bus': 'Bus Stop.png',
+    'transport': 'Bus Stop.png',
     'church': 'Church.png',
+    'chapel': 'Church.png',
+    'city hall': 'City Hall.png',
     'clinic': 'Clinic.png',
     'college': 'College.png',
+    'university': 'College.png', // Map university to college icon
     'convenience': 'Convenience Store.png',
     'convenience store': 'Convenience Store.png',
     'dental': 'Dental Clinic.png',
+    'dentist': 'Dental Clinic.png',
+    'diagnostic': 'Diagnostic center.png',
     'drugstore': 'Drugstore.png',
+    'pharmacy': 'Drugstore.png',
     'fire': 'Fire Station.png',
+    'fire station': 'Fire Station.png',
     'gas': 'Gas Station.png',
+    'gas station': 'Gas Station.png',
     'gym': 'Gym.png',
-    'hospital': 'Hospital.svg',
+    'fitness': 'Gym.png',
+    'hardware': 'Hardware Store.png',
+    'hospital': 'Hospital.svg', // Note: SVG
+    'jeepney': 'Jeepney Stop.png',
     'k-12': 'K-12.png',
-    'school': 'K-12.png', // Fallback for school
+    'school': 'K-12.png',
     'laundry': 'Laundry Shop.png',
+    'library': 'Library.png',
     'mall': 'Mall.png',
+    'money exchange': 'Money Exchange.png',
+    'mosque': 'Mosque.png',
+    'park': 'Park.png',
+    'playground': 'Playground.png',
+    'police': 'Police Station.png',
+    'police station': 'Police Station.png',
+    'post office': 'Post Office.png',
     'market': 'Public Market.png',
     'public market': 'Public Market.png',
-    'park': 'Park.png',
-    'police': 'Police Station.png',
     'restaurant': 'Restaurant.png',
+    'food': 'Restaurant.png',
+    'sports': 'Sports Complex.png',
+    'complex': 'Sports Complex.png',
     'vet': 'Vet.png',
-    'pharmacy': 'Drugstore.png', // Fallback
-    'university': 'College.png' // Fallback
+    'water': 'Water Refilling Station.svg' // Note: SVG
 };
 
-// Function to generate the Leaflet Icon object
+// Function to generate the Leaflet Icon
 const getAmenityIcon = (type) => {
-    // Normalize type to lowercase to match keys
+    // 1. Clean the type string (lowercase, trim)
     const key = type?.toLowerCase().trim();
-    const fileName = AMENITY_ICONS[key] || 'pin-red.png'; // Fallback if no icon found
+    
+    // 2. Find the filename, or use a default if missing
+    // IMPORTANT: This path '/assets/' only works if the folder is in 'public/assets'
+    const fileName = AMENITY_ICONS[key] || 'pin-red.png'; 
 
-    // Note: This assumes your images are in the public/assets folder
-    // If using Vite import, you might need a different path strategy, 
-    // but for standard public folders this works:
     return new L.Icon({
         iconUrl: `/assets/${fileName}`, 
-        iconSize: [32, 32],      // Adjusted size for better visibility
-        iconAnchor: [16, 32],    // Anchored at bottom-center
+        iconSize: [32, 32],      
+        iconAnchor: [16, 32],    
         popupAnchor: [0, -34],
-        shadowUrl: null          // Clean look (no shadow)
+        shadowUrl: null          
     });
 };
 
-// --- STANDARD ICONS (For Properties) ---
+// --- STANDARD ICONS ---
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -72,9 +93,7 @@ const createIcon = (color) => new L.Icon({
 
 const Icons = {
     property: createIcon('blue'),
-    selected: createIcon('gold'),
-    // Note: We don't need 'amenity' or 'essential' generic icons anymore
-    // because we use the custom ones above.
+    selected: createIcon('gold')
 };
 
 // --- HELPER: Haversine Distance ---
@@ -203,7 +222,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
             'police': 2, 'barangay': 1, 'barangay hall': 1, 'fire': 1,
             'hospital': 3, 'clinic': 3, 'college': 5, 'university': 5,
             'school': 5, 'k-12': 5, 'market': 3, 'public market': 3,
-            'gym': 3, 'mall': 2, 'park': 2 // Added common lifestyle ones
+            'gym': 3, 'mall': 2, 'park': 2 
         };
         const results = [];
         const usedIds = new Set(); 
@@ -288,8 +307,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
                     <Marker 
                         key={`amen-${amen.id}`} 
                         position={[amen.lat, amen.lng]} 
-                        // CHANGE: Use the dynamic icon generator here
-                        icon={getAmenityIcon(amen.type || amen.sub_category)} 
+                        icon={getAmenityIcon(amen.sub_category || amen.type)} // Check sub_category first
                         eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); handleAmenityClick(amen); } }}
                     >
                         <Popup offset={[0, -30]}>
