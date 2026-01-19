@@ -6,7 +6,57 @@ import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
 import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
 
-// --- ICONS ---
+// --- 1. CUSTOM ICON MAPPING ---
+// Maps the "Amenity Type" from your database to your actual filenames
+const AMENITY_ICONS = {
+    'bank': 'Bank.png',
+    'barangay': 'Barangay Hall.png',
+    'barangay hall': 'Barangay Hall.png',
+    'bus': 'Bus Stop.png',
+    'church': 'Church.png',
+    'clinic': 'Clinic.png',
+    'college': 'College.png',
+    'convenience': 'Convenience Store.png',
+    'convenience store': 'Convenience Store.png',
+    'dental': 'Dental Clinic.png',
+    'drugstore': 'Drugstore.png',
+    'fire': 'Fire Station.png',
+    'gas': 'Gas Station.png',
+    'gym': 'Gym.png',
+    'hospital': 'Hospital.svg',
+    'k-12': 'K-12.png',
+    'school': 'K-12.png', // Fallback for school
+    'laundry': 'Laundry Shop.png',
+    'mall': 'Mall.png',
+    'market': 'Public Market.png',
+    'public market': 'Public Market.png',
+    'park': 'Park.png',
+    'police': 'Police Station.png',
+    'restaurant': 'Restaurant.png',
+    'vet': 'Vet.png',
+    'pharmacy': 'Drugstore.png', // Fallback
+    'university': 'College.png' // Fallback
+};
+
+// Function to generate the Leaflet Icon object
+const getAmenityIcon = (type) => {
+    // Normalize type to lowercase to match keys
+    const key = type?.toLowerCase().trim();
+    const fileName = AMENITY_ICONS[key] || 'pin-red.png'; // Fallback if no icon found
+
+    // Note: This assumes your images are in the public/assets folder
+    // If using Vite import, you might need a different path strategy, 
+    // but for standard public folders this works:
+    return new L.Icon({
+        iconUrl: `/assets/${fileName}`, 
+        iconSize: [32, 32],      // Adjusted size for better visibility
+        iconAnchor: [16, 32],    // Anchored at bottom-center
+        popupAnchor: [0, -34],
+        shadowUrl: null          // Clean look (no shadow)
+    });
+};
+
+// --- STANDARD ICONS (For Properties) ---
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -23,8 +73,8 @@ const createIcon = (color) => new L.Icon({
 const Icons = {
     property: createIcon('blue'),
     selected: createIcon('gold'),
-    amenity: createIcon('red'),
-    essential: createIcon('violet') 
+    // Note: We don't need 'amenity' or 'essential' generic icons anymore
+    // because we use the custom ones above.
 };
 
 // --- HELPER: Haversine Distance ---
@@ -92,8 +142,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     const [activeFilter, setActiveFilter] = useState(null); 
     const [selectedAmenity, setSelectedAmenity] = useState(null);
     const [routeData, setRouteData] = useState(null);
-    
-    // NEW: State for AI Filtering
     const [filteredIds, setFilteredIds] = useState(null);
 
     // --- CONFIG LOADER ---
@@ -154,7 +202,8 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         const LIMITS = {
             'police': 2, 'barangay': 1, 'barangay hall': 1, 'fire': 1,
             'hospital': 3, 'clinic': 3, 'college': 5, 'university': 5,
-            'school': 5, 'k-12': 5, 'market': 3, 'public market': 3
+            'school': 5, 'k-12': 5, 'market': 3, 'public market': 3,
+            'gym': 3, 'mall': 2, 'park': 2 // Added common lifestyle ones
         };
         const results = [];
         const usedIds = new Set(); 
@@ -188,19 +237,12 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         return essentialAmenities;
     }, [selectedProp, activeFilter, amenities, essentialAmenities]);
 
-    // --- NEW LOGIC: HIDE OTHERS ON SELECTION ---
+    // --- VISIBLE PROPERTIES LOGIC ---
     const visibleProperties = useMemo(() => {
-        // 1. If a property is selected, ONLY show that one
-        if (selectedProp) {
-            return [selectedProp];
-        }
-        
-        // 2. If no selection, check for AI filters
+        if (selectedProp) return [selectedProp];
         if (!filteredIds) return properties; 
-        
-        // 3. Otherwise show filtered list
         return properties.filter(p => filteredIds.includes(p.id));
-    }, [properties, filteredIds, selectedProp]); // Added selectedProp dependency
+    }, [properties, filteredIds, selectedProp]);
 
     // --- HANDLERS ---
     const handlePropSelect = (prop) => {
@@ -218,7 +260,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         setSelectedProp(null); setRouteData(null); setSelectedAmenity(null); setActiveFilter(null);
     };
 
-    // --- AI RECOMMENDATION HANDLER ---
     const handleRecommendation = (recommendedProp) => {
         handlePropSelect(recommendedProp);
     };
@@ -232,7 +273,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
 
                 {routeData && <Polyline positions={routeData.path} color="#3b82f6" weight={5} opacity={0.8} dashArray="1, 10" lineCap="round" />}
 
-                {/* Iterate over visibleProperties (Now hides unselected ones) */}
+                {/* PROPERTIES (Pins) */}
                 {visibleProperties.map(prop => (
                     prop.lat && prop.lng && (
                         <Marker key={`prop-${prop.id}`} position={[prop.lat, prop.lng]} icon={selectedProp?.id === prop.id ? Icons.selected : Icons.property}
@@ -242,9 +283,15 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
                     )
                 ))}
 
+                {/* AMENITIES (Custom Icons) */}
                 {visibleAmenities.map(amen => (
-                    <Marker key={`amen-${amen.id}`} position={[amen.lat, amen.lng]} icon={activeFilter ? Icons.amenity : Icons.essential}
-                        eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); handleAmenityClick(amen); } }}>
+                    <Marker 
+                        key={`amen-${amen.id}`} 
+                        position={[amen.lat, amen.lng]} 
+                        // CHANGE: Use the dynamic icon generator here
+                        icon={getAmenityIcon(amen.type || amen.sub_category)} 
+                        eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); handleAmenityClick(amen); } }}
+                    >
                         <Popup offset={[0, -30]}>
                             <div className="text-center min-w-[120px]">
                                 <strong className="block text-sm mb-1">{amen.name}</strong>
@@ -262,7 +309,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
                 ))}
             </MapContainer>
 
-            {/* --- AI LIFESTYLE MATCHER (Top Right) --- */}
             <LifestyleQuiz 
                 properties={properties} 
                 onRecommend={handleRecommendation} 
