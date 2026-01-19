@@ -5,13 +5,13 @@ import {
     BookOpen 
 } from 'lucide-react';
 
-export const LifestyleQuiz = ({ properties, onRecommend }) => {
+// NEW PROP: onFilter (Passed from parent to control the map)
+export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [step, setStep] = useState('quiz');
     const [selectedTags, setSelectedTags] = useState([]); 
     const [result, setResult] = useState(null);
 
-    // --- CONFIGURATION ---
     const PROFILES = [
         { id: 'student', label: 'Student', icon: BookOpen, color: 'text-pink-600', bg: 'bg-pink-50' },
         { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-600', bg: 'bg-green-50' },
@@ -21,14 +21,11 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
         { id: 'convenience', label: 'Urban', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50' }
     ];
 
-    // Toggle Logic (Max 4 selections)
     const toggleTag = (id) => {
         if (selectedTags.includes(id)) {
             setSelectedTags(selectedTags.filter(t => t !== id));
         } else {
-            if (selectedTags.length < 4) {
-                setSelectedTags([...selectedTags, id]);
-            }
+            if (selectedTags.length < 4) setSelectedTags([...selectedTags, id]);
         }
     };
 
@@ -36,22 +33,16 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
         if (selectedTags.length === 0) return;
         setStep('loading');
 
-        // --- SMART PAYLOAD ---
-        // Maps the user's personas to specific vector priorities for the Math Engine
         const payload = {
-            personas: selectedTags, // Sends list to Tracery Engine
-            
-            // Vector Math Logic:
+            personas: selectedTags, 
             safety_priority: (selectedTags.includes('safety') || selectedTags.includes('family')) ? 1.0 : 0.0,
-            
-            // Student OR Family triggers Education search
             education_priority: (selectedTags.includes('family') || selectedTags.includes('student')) ? 1.0 : 0.0,
-            
             health_priority: (selectedTags.includes('pets') || selectedTags.includes('retirement')) ? 1.0 : 0.0, 
             lifestyle_priority: (selectedTags.includes('fitness') || selectedTags.includes('convenience')) ? 1.0 : 0.0
         };
 
         try {
+            // CHANGE: Ensure this points to your live URL
             const API_URL = 'https://verity-ai.onrender.com'; 
             
             const response = await fetch(`${API_URL}/recommend`, {
@@ -65,6 +56,11 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
             
             const winner = properties.find(p => p.id === data.property_id);
             
+            // --- NEW: FILTER MAP LOGIC ---
+            if (data.matched_ids && onFilter) {
+                onFilter(data.matched_ids); // Tell parent to hide non-matching pins
+            }
+
             if (winner) {
                 setResult({
                     property: winner,
@@ -73,18 +69,28 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
                     highlights: data.nearest_highlights
                 });
                 setStep('result');
-            } else {
-                alert("AI matched a property not currently loaded.");
-                setStep('quiz');
             }
         } catch (err) {
             console.error(err);
-            alert("AI is waking up. Please try again in 10s.");
+            alert("AI is starting up. Try again in 10s.");
             setStep('quiz');
         }
     };
 
-    const handleViewProperty = () => { if (result?.property) onRecommend(result.property); };
+    const handleReset = () => {
+        setStep('quiz');
+        setSelectedTags([]);
+        // Reset Map to show all
+        if (onFilter) onFilter(null); 
+    };
+
+    // CHANGE: This button now opens details BUT DOES NOT CLOSE the AI Box
+    const handleViewProperty = () => { 
+        if (result?.property) {
+            onRecommend(result.property); 
+            // We intentionally do NOT call setIsOpen(false) here
+        }
+    };
 
     if (!isOpen) {
         return (
@@ -95,7 +101,8 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
     }
 
     return (
-        <div className="absolute top-4 right-4 z-[1000] w-[320px] bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 overflow-hidden animate-in fade-in zoom-in duration-300 font-sans">
+        // CHANGE: Added pointer-events-auto to ensure clicks work even if map has overlays
+        <div className="absolute top-4 right-4 z-[1000] w-[320px] bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 overflow-hidden animate-in fade-in zoom-in duration-300 font-sans pointer-events-auto">
             <div className="bg-gradient-to-r from-violet-700 to-indigo-700 p-4 text-white flex justify-between items-center">
                 <div>
                     <h3 className="font-bold text-sm flex items-center gap-2">
@@ -103,6 +110,7 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
                     </h3>
                     <p className="text-[10px] text-violet-200 opacity-80">Multi-Vector Analysis</p>
                 </div>
+                {/* Close Button: Only this completely minimizes the widget */}
                 <button onClick={() => setIsOpen(false)} className="bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition"><X size={14} /></button>
             </div>
 
@@ -153,19 +161,21 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
                         <Loader2 size={36} className="text-violet-600 animate-spin mx-auto mb-4" />
                         <h4 className="text-sm font-bold text-gray-800">Thinking...</h4>
                         <p className="text-xs text-gray-500 mt-2 px-4">
-                            Analyzing proximity for {selectedTags.join(', ')}...
+                            Filtering properties for {selectedTags.join(', ')}...
                         </p>
                     </div>
                 )}
 
                 {step === 'result' && (
                     <div className="animate-in slide-in-from-bottom-4 duration-500">
+                        {/* Winner Section */}
                         <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 mb-4 relative">
                             <Quote size={24} className="absolute -top-3 -left-2 text-violet-200 fill-violet-200" />
                             <h5 className="text-violet-800 font-bold text-sm mb-1.5">{result?.headline}</h5>
                             <p className="text-xs text-gray-700 leading-relaxed font-medium">"{result?.body}"</p>
                         </div>
 
+                        {/* Property Card */}
                         <div className="flex items-center gap-3 mb-4 p-2.5 bg-white rounded-xl border border-gray-100 shadow-sm">
                             {result?.property.image_url ? (
                                 <img src={result.property.image_url} alt="" className="w-12 h-12 rounded-lg object-cover" />
@@ -178,6 +188,7 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
                             </div>
                         </div>
 
+                        {/* Highlights */}
                         {result?.highlights && result.highlights.length > 0 && (
                             <div className="mb-4">
                                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Matched Amenities</p>
@@ -191,8 +202,9 @@ export const LifestyleQuiz = ({ properties, onRecommend }) => {
                             </div>
                         )}
 
+                        {/* Actions */}
                         <div className="flex gap-2">
-                            <button onClick={() => setStep('quiz')} className="p-3 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition border border-transparent hover:border-gray-200"><RotateCcw size={18} /></button>
+                            <button onClick={handleReset} className="p-3 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition border border-transparent hover:border-gray-200"><RotateCcw size={18} /></button>
                             <button onClick={handleViewProperty} className="flex-1 bg-violet-600 text-white rounded-xl text-xs font-bold hover:bg-violet-700 shadow-lg shadow-violet-200 transition-all flex items-center justify-center gap-2">View Details <ArrowRight size={14} /></button>
                         </div>
                     </div>

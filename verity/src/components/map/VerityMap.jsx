@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
-import { LifestyleQuiz } from '../widget/LifestyleQuiz'; // <--- IMPORT THIS
+import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
 
 // --- ICONS ---
 delete L.Icon.Default.prototype._getIconUrl;
@@ -92,6 +92,9 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     const [activeFilter, setActiveFilter] = useState(null); 
     const [selectedAmenity, setSelectedAmenity] = useState(null);
     const [routeData, setRouteData] = useState(null);
+    
+    // NEW: State for AI Filtering
+    const [filteredIds, setFilteredIds] = useState(null);
 
     // --- CONFIG LOADER ---
     useEffect(() => {
@@ -185,6 +188,12 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         return essentialAmenities;
     }, [selectedProp, activeFilter, amenities, essentialAmenities]);
 
+    // NEW: Visible Properties (Filtered by AI)
+    const visibleProperties = useMemo(() => {
+        if (!filteredIds) return properties; // Show all if no AI filter
+        return properties.filter(p => filteredIds.includes(p.id));
+    }, [properties, filteredIds]);
+
     // --- HANDLERS ---
     const handlePropSelect = (prop) => {
         setSelectedProp(prop); setActiveFilter(null); setRouteData(null); setSelectedAmenity(null);
@@ -215,7 +224,8 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
 
                 {routeData && <Polyline positions={routeData.path} color="#3b82f6" weight={5} opacity={0.8} dashArray="1, 10" lineCap="round" />}
 
-                {properties.map(prop => (
+                {/* Iterate over visibleProperties (AI Filtered) */}
+                {visibleProperties.map(prop => (
                     prop.lat && prop.lng && (
                         <Marker key={`prop-${prop.id}`} position={[prop.lat, prop.lng]} icon={selectedProp?.id === prop.id ? Icons.selected : Icons.property}
                             eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); handlePropSelect(prop); } }}>
@@ -245,14 +255,12 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
             </MapContainer>
 
             {/* --- AI LIFESTYLE MATCHER (Top Right) --- */}
-            {/* Only show if NO property is currently selected, to reduce clutter */}
-            {!selectedProp && (
-                <LifestyleQuiz 
-                    properties={properties} 
-                    amenities={amenities} 
-                    onRecommend={handleRecommendation} 
-                />
-            )}
+            {/* Condition Removed: Always Visible */}
+            <LifestyleQuiz 
+                properties={properties} 
+                onRecommend={handleRecommendation} 
+                onFilter={setFilteredIds} 
+            />
 
             <UnifiedPanel 
                 property={selectedProp} 

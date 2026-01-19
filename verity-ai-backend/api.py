@@ -10,8 +10,6 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import random
-
-# --- NEW IMPORTS ---
 import tracery
 from tracery.modifiers import base_english
 
@@ -41,7 +39,6 @@ CATEGORIES = {
 ai_brain = {}
 
 # --- TRACERY GRAMMAR (The Sentence Machine) ---
-# This defines the "LEGO bricks" the AI uses to build sentences.
 grammar_source = {
     # 1. BUILDING BLOCKS
     "opener": [
@@ -78,7 +75,7 @@ grammar_source = {
     ],
     "connector": ["which means", "so", "giving you", "meaning"],
     
-    # 2. COMBO TEMPLATES (When 2 items win)
+    # 2. COMBO TEMPLATES
     "combo_headline": ["The Perfect Duo", "Double the Value", "Unmatched Convenience", "Connected Living", "Power Couple"],
     "combo_body": [
         "Enjoy the best of both worlds. You have easy access to {name1} while keeping {name2} #distance_adj#.",
@@ -106,7 +103,6 @@ grammar_source = {
 }
 
 # --- LOGIC & GENERATOR ---
-
 def load_model():
     global ai_brain
     try:
@@ -195,7 +191,6 @@ class UserPreference(BaseModel):
     education_priority: float
     lifestyle_priority: float
 
-# --- THE PERSUASION ENGINE (TRACERY EDITION) ---
 def generate_persuasive_copy(personas, data):
     category_map = {
         'student': 'education', 'family': 'education',
@@ -221,28 +216,24 @@ def generate_persuasive_copy(personas, data):
     matches.sort(key=lambda x: x['dist'])
     close_matches = [m for m in matches if m['dist'] <= 1.5]
 
-    # --- LOGIC BRANCH 1: COMBO (2 Winners) ---
+    # --- LOGIC: COMBO ---
     if len(close_matches) >= 2:
         m1 = close_matches[0]
         m2 = close_matches[1]
-        
-        # Inject the specific names into the text
         headline = grammar.flatten("#combo_headline#")
         body_template = grammar.flatten("#combo_body#")
-        
         return headline, body_template.format(name1=m1['name'], name2=m2['name'])
 
-    # --- LOGIC BRANCH 2: SINGLE WINNER ---
+    # --- LOGIC: SINGLE ---
     if not matches: return "Great Location", "Prime location."
     
-    # Tie-Breaker Logic (Randomly pick if multiple are close)
+    # Tie-Breaker Logic
     min_dist = matches[0]['dist']
     candidates = [m for m in matches if m['dist'] <= min_dist + 0.1]
     best_match = random.choice(candidates)
     
     persona_key = best_match['persona']
     
-    # Try to find specific templates like "#student_headline#"
     headline_rule = f"#{persona_key}_headline#"
     body_rule = f"#{persona_key}_body#"
     
@@ -259,7 +250,6 @@ def generate_persuasive_copy(personas, data):
 def recommend(pref: UserPreference):
     if not ai_brain: raise HTTPException(status_code=503, detail="Training")
 
-    # Math Search (Fixed to silence warnings)
     user_vector = pd.DataFrame([[
         pref.safety_priority * 5.0,
         pref.health_priority * 5.0,
@@ -267,25 +257,31 @@ def recommend(pref: UserPreference):
         pref.lifestyle_priority * 5.0
     ]], columns=['safety', 'health', 'education', 'lifestyle'])
     
-    distances, indices = ai_brain['model'].kneighbors(user_vector, n_neighbors=1)
-    idx = indices[0][0]
-    nearest_data = ai_brain['metadata'][idx]
+    # NEW: Get up to 10 neighbors for filtering
+    n_matches = min(10, len(ai_brain['ids']))
+    distances, indices = ai_brain['model'].kneighbors(user_vector, n_neighbors=n_matches)
+    
+    best_idx = indices[0][0]
+    nearest_data = ai_brain['metadata'][best_idx]
     
     headline, body = generate_persuasive_copy(pref.personas, nearest_data)
 
+    # Convert to Python int list for JSON
+    matched_ids = [int(id) for id in ai_brain['ids'][indices[0]]]
+
     return {
-        "property_id": ai_brain['ids'][idx],
-        "property_name": ai_brain['names'][idx],
+        "property_id": ai_brain['ids'][best_idx],
+        "property_name": ai_brain['names'][best_idx],
         "ai_headline": headline,
         "ai_body": body,
-        "nearest_highlights": build_highlights(nearest_data)
+        "nearest_highlights": build_highlights(nearest_data),
+        "matched_ids": matched_ids 
     }
 
 def build_highlights(data):
     items = []
     for cat, info in data.items():
         if info and info['dist'] < 3.0: 
-             # FORMAT: "College is close (University of San Carlos) at 0.4km"
              items.append(f"{info['type']} is close ({info['specific_name']}) at {info['dist']:.1f}km")
     return items[:3]
 
