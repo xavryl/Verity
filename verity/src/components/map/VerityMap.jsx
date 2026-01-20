@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
 import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
 
-// --- 1. ICON MAPPING (Same as before) ---
+// --- 1. ICON MAPPING ---
 const AMENITY_ICONS = {
     'dental clinic': 'Dental Clinic.png', 'dental': 'Dental Clinic.png', 'dentist': 'Dental Clinic.png',
     'clinic': 'Clinic.png', 'hospital': 'Hospital.svg',
@@ -134,13 +134,12 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     const [amenities, setAmenities] = useState([]);
     const [selectedProp, setSelectedProp] = useState(null);
     const [activeFilter, setActiveFilter] = useState(null); 
-    const [subTypeFilter, setSubTypeFilter] = useState(null); // NEW STATE for Subtype
+    const [subTypeFilter, setSubTypeFilter] = useState(null); 
     const [selectedAmenity, setSelectedAmenity] = useState(null);
     const [routeData, setRouteData] = useState(null);
     const [filteredIds, setFilteredIds] = useState(null);
     const [preciseData, setPreciseData] = useState({});
 
-    // --- CONFIG LOADER ---
     useEffect(() => {
         const loadConfig = async () => {
             const params = new URLSearchParams(window.location.search);
@@ -163,7 +162,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         loadConfig();
     }, []);
 
-    // --- DATA FETCH ---
     useEffect(() => {
         const loadData = async () => {
             if (customProperties) {
@@ -192,7 +190,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         loadData();
     }, [customProperties]);
 
-    // --- SMART ESSENTIALS CALCULATOR ---
     const essentialAmenities = useMemo(() => {
         if (!selectedProp || !amenities.length) return [];
         const LIMITS = {
@@ -235,7 +232,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     }, [selectedProp, amenities]);
 
     // --- 1. FULL LIST FOR INTENT (Everything in 1km) ---
-    // This is passed to UnifiedPanel so it can count ALL hospitals, clinics, etc.
     const intentAmenities = useMemo(() => {
         if (!selectedProp || !activeFilter) return [];
         return amenities.filter(a => {
@@ -246,25 +242,20 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     }, [selectedProp, activeFilter, amenities]);
 
     // --- 2. FILTERED LIST FOR MAP (Subtype Logic) ---
-    // If a subtype is clicked, this filters the map pins.
     const visibleAmenities = useMemo(() => {
         if (!selectedProp) return [];
-
         if (activeFilter) {
-            // Apply Subtype Filter to the Intent List
             if (subTypeFilter) {
                 return intentAmenities.filter(a => {
                     const label = (a.sub_category || a.type).toLowerCase();
                     return label === subTypeFilter.toLowerCase();
                 });
             }
-            return intentAmenities; // Show all for this intent
+            return intentAmenities; 
         }
-
-        return essentialAmenities; // Default view
+        return essentialAmenities;
     }, [selectedProp, activeFilter, subTypeFilter, intentAmenities, essentialAmenities]);
 
-    // --- VISIBLE PROPERTIES LOGIC ---
     const visibleProperties = useMemo(() => {
         if (selectedProp) return [selectedProp];
         if (!filteredIds) return properties; 
@@ -372,6 +363,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
 
     return (
         <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
+            {/* --- RE-ADDED: MARCHING ANTS CSS --- */}
             <style>
                 {`
                     @keyframes dash-animation {
@@ -406,7 +398,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
                     )
                 ))}
 
-                {/* SHOW CLUSTERS ONLY WHEN A FILTER IS ACTIVE */}
                 {activeFilter ? (
                     <MarkerClusterGroup 
                         chunkedLoading 
@@ -433,16 +424,16 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
             <UnifiedPanel 
                 property={selectedProp} 
                 essentialAmenities={essentialAmenities} 
-                filteredAmenities={intentAmenities} // PASS FULL LIST FOR COUNTS
+                filteredAmenities={intentAmenities} 
                 onClose={handleClose} 
                 activeFilter={activeFilter} 
-                onFilterChange={(filter) => { setActiveFilter(filter); setSubTypeFilter(null); }} // RESET SUBTYPE ON CHANGE
+                onFilterChange={(filter) => { setActiveFilter(filter); setSubTypeFilter(null); }} 
                 onAmenitySelect={handleAmenityClick} 
                 selectedAmenity={selectedAmenity}
                 routeData={routeData}
                 preciseData={preciseData} 
-                subTypeFilter={subTypeFilter} // PASS STATE
-                onSubTypeSelect={setSubTypeFilter} // PASS HANDLER
+                subTypeFilter={subTypeFilter} 
+                onSubTypeSelect={setSubTypeFilter} 
             />
         </div>
     );
