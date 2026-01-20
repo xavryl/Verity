@@ -129,7 +129,7 @@ const fetchRoute = async (start, end) => {
 };
 
 // --- MAIN COMPONENT ---
-export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
+export const VerityMap = ({ customProperties = null }) => {
     const [properties, setProperties] = useState([]);
     const [amenities, setAmenities] = useState([]);
     const [selectedProp, setSelectedProp] = useState(null);
@@ -231,7 +231,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         return results;
     }, [selectedProp, amenities]);
 
-    // --- 1. FULL LIST FOR INTENT (Everything in 1km) ---
     const intentAmenities = useMemo(() => {
         if (!selectedProp || !activeFilter) return [];
         return amenities.filter(a => {
@@ -241,7 +240,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
         });
     }, [selectedProp, activeFilter, amenities]);
 
-    // --- 2. FILTERED LIST FOR MAP (Subtype Logic) ---
     const visibleAmenities = useMemo(() => {
         if (!selectedProp) return [];
         if (activeFilter) {
@@ -265,7 +263,6 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     // --- BACKGROUND FETCH QUEUE ---
     useEffect(() => {
         if (!selectedProp || !visibleAmenities.length) {
-            setPreciseData({}); 
             return;
         }
         const nextToFetch = visibleAmenities.find(a => !preciseData[a.id]);
@@ -288,6 +285,7 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     // --- HANDLERS ---
     const handlePropSelect = (prop) => {
         setSelectedProp(prop); 
+        setPreciseData({}); // Reset cache
         setActiveFilter(null); 
         setSubTypeFilter(null); 
         setRouteData(null); 
@@ -311,14 +309,18 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
     };
 
     const handleClose = () => {
-        setSelectedProp(null); setRouteData(null); setSelectedAmenity(null); setActiveFilter(null); setSubTypeFilter(null);
+        setSelectedProp(null); 
+        setPreciseData({}); // Reset cache
+        setRouteData(null); 
+        setSelectedAmenity(null); 
+        setActiveFilter(null); 
+        setSubTypeFilter(null);
     };
 
     const handleRecommendation = (recommendedProp) => {
         handlePropSelect(recommendedProp);
     };
 
-    // --- RENDER HELPERS ---
     const renderMarkers = () => {
         return visibleAmenities.map(amen => {
             const realData = preciseData[amen.id];
@@ -363,14 +365,13 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
 
     return (
         <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
-            {/* --- RE-ADDED: MARCHING ANTS CSS --- */}
+            {/* --- FIX: UPDATED CSS FOR SMOOTH FLOW --- */}
             <style>
                 {`
                     @keyframes dash-animation {
-                        to { stroke-dashoffset: -20; }
+                        to { stroke-dashoffset: -30; } /* Matches 10+20 dash array */
                     }
                     .marching-ants {
-                        stroke-dasharray: 10, 10;
                         animation: dash-animation 1s linear infinite;
                     }
                 `}
@@ -385,7 +386,14 @@ export const VerityMap = ({ isEmbedded = false, customProperties = null }) => {
                     <Polyline 
                         key={selectedAmenity?.id} 
                         positions={routeData.path} 
-                        pathOptions={{ className: 'marching-ants', color: '#3b82f6', weight: 5, opacity: 0.8, lineCap: "round" }} 
+                        pathOptions={{ 
+                            className: 'marching-ants', 
+                            color: '#3b82f6', 
+                            weight: 5, 
+                            opacity: 0.8, 
+                            lineCap: "round",
+                            dashArray: '10, 20' // 10 dash + 20 gap = 30 total
+                        }} 
                     />
                 )}
 
