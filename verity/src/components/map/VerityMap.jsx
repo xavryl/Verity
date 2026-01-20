@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
 import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
 
-// --- CSS FOR ANIMATION (Injected dynamically to ensure it works) ---
+// --- CSS FOR ANIMATION ---
 const ANIMATION_STYLE = `
   @keyframes dash-animation {
     to { stroke-dashoffset: -30; }
@@ -17,6 +17,10 @@ const ANIMATION_STYLE = `
   .marching-ants {
     animation: dash-animation 1s linear infinite;
     stroke-dasharray: 10, 20; 
+  }
+  /* Optional: Smooth transition for markers if supported by Leaflet CSS interactively */
+  .leaflet-marker-icon {
+    transition: width 0.2s, height 0.2s, margin-top 0.2s, margin-left 0.2s;
   }
 `;
 
@@ -47,18 +51,23 @@ const AMENITY_ICONS = {
     'post office': 'Post Office.png', 'church': 'Church.png', 'chapel': 'Church.png', 'mosque': 'Mosque.png'
 };
 
-// --- ICON CACHE (PREVENTS FLICKERING) ---
-// We store created icons here so we don't do "new L.Icon()" on every render
+// --- ICON CACHE & GENERATOR ---
 const iconCache = {};
 
-const getAmenityIcon = (type) => {
-    const key = type?.toLowerCase().trim();
+const getAmenityIcon = (type, isHovered = false) => {
+    const rawKey = type?.toLowerCase().trim();
+    // Create a unique cache key for normal vs hovered state
+    const cacheKey = isHovered ? `${rawKey}_hover` : rawKey;
     
-    // Return cached icon if exists
-    if (iconCache[key]) return iconCache[key];
+    if (iconCache[cacheKey]) return iconCache[cacheKey];
 
-    const fileName = AMENITY_ICONS[key];
+    const fileName = AMENITY_ICONS[rawKey];
     let icon;
+
+    // Define sizes: Normal vs Large (Hovered)
+    const size = isHovered ? [38, 48] : [28, 36]; 
+    const anchor = isHovered ? [19, 48] : [14, 36]; // Keep the point at the bottom center
+    const popupAnchor = isHovered ? [0, -42] : [0, -32];
 
     if (!fileName) {
         icon = new L.Icon({
@@ -69,16 +78,18 @@ const getAmenityIcon = (type) => {
     } else {
         icon = new L.Icon({
             iconUrl: `/assets/${fileName}`, 
-            iconSize: [28, 36], iconAnchor: [14, 36], popupAnchor: [0, -32], shadowUrl: null          
+            iconSize: size, 
+            iconAnchor: anchor, 
+            popupAnchor: popupAnchor, 
+            shadowUrl: null          
         });
     }
 
-    // Save to cache
-    iconCache[key] = icon;
+    iconCache[cacheKey] = icon;
     return icon;
 };
 
-// Fix Leaflet's default icon path issues
+// Leaflet defaults fix
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -162,11 +173,15 @@ export const VerityMap = ({ customProperties = null }) => {
     const [activeFilter, setActiveFilter] = useState(null); 
     const [subTypeFilter, setSubTypeFilter] = useState(null); 
     const [selectedAmenity, setSelectedAmenity] = useState(null);
+    
+    // [NEW] Hover State
+    const [hoveredAmenityId, setHoveredAmenityId] = useState(null);
+
     const [routeData, setRouteData] = useState(null);
     const [filteredIds, setFilteredIds] = useState(null);
     const [preciseData, setPreciseData] = useState({});
 
-    // Inject animation CSS
+    // Inject CSS
     useEffect(() => {
         const style = document.createElement('style');
         style.innerHTML = ANIMATION_STYLE;
@@ -358,26 +373,32 @@ export const VerityMap = ({ customProperties = null }) => {
     const renderMarkers = () => {
         return visibleAmenities.map(amen => {
             const realData = preciseData[amen.id];
+            
+            // Check if this specific pin is selected OR hovered
+            const isHovered = hoveredAmenityId === amen.id;
             const isSelected = selectedAmenity?.id === amen.id;
+            
+            // Use route data if clicked, or just the distance data if available
             const dataToShow = isSelected ? routeData : realData;
 
             return (
                 <Marker 
                     key={`amen-${amen.id}`} 
                     position={[amen.lat, amen.lng]} 
-                    icon={getAmenityIcon(amen.sub_category || amen.type)}
+                    // Pass isHovered or isSelected to get the larger icon
+                    icon={getAmenityIcon(amen.sub_category || amen.type, isHovered || isSelected)}
+                    zIndexOffset={isHovered ? 1000 : 0} // Bring hovered item to front
                     eventHandlers={{ 
-                        // CLICK: Sets the selected amenity (Blue line)
                         click: (e) => { 
                             L.DomEvent.stopPropagation(e); 
                             handleAmenityClick(amen); 
                         },
-                        // HOVER: Opens popup without selecting
                         mouseover: (e) => {
+                            setHoveredAmenityId(amen.id); // Trigger enlargment
                             e.target.openPopup();
                         },
-                        // MOUSEOUT: Closes popup ONLY if not currently clicked/selected
                         mouseout: (e) => {
+                            setHoveredAmenityId(null); // Reset size
                             if (selectedAmenity?.id !== amen.id) {
                                 e.target.closePopup();
                             }
