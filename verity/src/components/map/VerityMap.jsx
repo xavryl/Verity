@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import MarkerClusterGroup from 'react-leaflet-cluster';
@@ -8,6 +8,17 @@ import L from 'leaflet';
 import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
 import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
+
+// --- CSS FOR ANIMATION (Injected dynamically to ensure it works) ---
+const ANIMATION_STYLE = `
+  @keyframes dash-animation {
+    to { stroke-dashoffset: -30; }
+  }
+  .marching-ants {
+    animation: dash-animation 1s linear infinite;
+    stroke-dasharray: 10, 20; 
+  }
+`;
 
 // --- 1. ICON MAPPING ---
 const AMENITY_ICONS = {
@@ -36,23 +47,38 @@ const AMENITY_ICONS = {
     'post office': 'Post Office.png', 'church': 'Church.png', 'chapel': 'Church.png', 'mosque': 'Mosque.png'
 };
 
-// --- 2. ICON GENERATOR ---
+// --- ICON CACHE (PREVENTS FLICKERING) ---
+// We store created icons here so we don't do "new L.Icon()" on every render
+const iconCache = {};
+
 const getAmenityIcon = (type) => {
     const key = type?.toLowerCase().trim();
+    
+    // Return cached icon if exists
+    if (iconCache[key]) return iconCache[key];
+
     const fileName = AMENITY_ICONS[key];
+    let icon;
+
     if (!fileName) {
-        return new L.Icon({
+        icon = new L.Icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/markers/marker-icon-2x-red.png',
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
+    } else {
+        icon = new L.Icon({
+            iconUrl: `/assets/${fileName}`, 
+            iconSize: [28, 36], iconAnchor: [14, 36], popupAnchor: [0, -32], shadowUrl: null          
+        });
     }
-    return new L.Icon({
-        iconUrl: `/assets/${fileName}`, 
-        iconSize: [28, 36], iconAnchor: [14, 36], popupAnchor: [0, -32], shadowUrl: null          
-    });
+
+    // Save to cache
+    iconCache[key] = icon;
+    return icon;
 };
 
+// Fix Leaflet's default icon path issues
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -139,6 +165,14 @@ export const VerityMap = ({ customProperties = null }) => {
     const [routeData, setRouteData] = useState(null);
     const [filteredIds, setFilteredIds] = useState(null);
     const [preciseData, setPreciseData] = useState({});
+
+    // Inject animation CSS
+    useEffect(() => {
+        const style = document.createElement('style');
+        style.innerHTML = ANIMATION_STYLE;
+        document.head.appendChild(style);
+        return () => { document.head.removeChild(style); };
+    }, []);
 
     useEffect(() => {
         const loadConfig = async () => {
@@ -332,7 +366,23 @@ export const VerityMap = ({ customProperties = null }) => {
                     key={`amen-${amen.id}`} 
                     position={[amen.lat, amen.lng]} 
                     icon={getAmenityIcon(amen.sub_category || amen.type)}
-                    eventHandlers={{ click: (e) => { L.DomEvent.stopPropagation(e); handleAmenityClick(amen); } }}
+                    eventHandlers={{ 
+                        // CLICK: Sets the selected amenity (Blue line)
+                        click: (e) => { 
+                            L.DomEvent.stopPropagation(e); 
+                            handleAmenityClick(amen); 
+                        },
+                        // HOVER: Opens popup without selecting
+                        mouseover: (e) => {
+                            e.target.openPopup();
+                        },
+                        // MOUSEOUT: Closes popup ONLY if not currently clicked/selected
+                        mouseout: (e) => {
+                            if (selectedAmenity?.id !== amen.id) {
+                                e.target.closePopup();
+                            }
+                        }
+                    }}
                 >
                     <Popup offset={[0, -30]}>
                         <div className="text-center min-w-[120px]">
@@ -376,7 +426,7 @@ export const VerityMap = ({ customProperties = null }) => {
                         key={selectedAmenity?.id} 
                         positions={routeData.path} 
                         pathOptions={{ 
-                            className: 'marching-ants', // Calls the CSS animation from index.css
+                            className: 'marching-ants', // Calls the CSS injected above
                             color: '#3b82f6', 
                             weight: 5, 
                             opacity: 0.8, 
