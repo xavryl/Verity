@@ -285,7 +285,7 @@ export const VerityMap = ({ customProperties = null }) => {
     // --- HANDLERS ---
     const handlePropSelect = (prop) => {
         setSelectedProp(prop); 
-        setPreciseData({}); // Reset cache
+        setPreciseData({}); 
         setActiveFilter(null); 
         setSubTypeFilter(null); 
         setRouteData(null); 
@@ -310,7 +310,7 @@ export const VerityMap = ({ customProperties = null }) => {
 
     const handleClose = () => {
         setSelectedProp(null); 
-        setPreciseData({}); // Reset cache
+        setPreciseData({}); 
         setRouteData(null); 
         setSelectedAmenity(null); 
         setActiveFilter(null); 
@@ -365,18 +365,7 @@ export const VerityMap = ({ customProperties = null }) => {
 
     return (
         <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
-            {/* --- FIX: UPDATED CSS FOR SMOOTH FLOW --- */}
-            <style>
-                {`
-                    @keyframes dash-animation {
-                        to { stroke-dashoffset: -30; } /* Matches 10+20 dash array */
-                    }
-                    .marching-ants {
-                        animation: dash-animation 1s linear infinite;
-                    }
-                `}
-            </style>
-
+            
             <MapContainer center={[10.3157, 123.8854]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
                 <TileLayer attribution='&copy; CARTO' url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png" />
                 <MapInvalidator />
@@ -387,7 +376,7 @@ export const VerityMap = ({ customProperties = null }) => {
                         key={selectedAmenity?.id} 
                         positions={routeData.path} 
                         pathOptions={{ 
-                            className: 'marching-ants', 
+                            className: 'marching-ants', // Calls the CSS animation from index.css
                             color: '#3b82f6', 
                             weight: 5, 
                             opacity: 0.8, 

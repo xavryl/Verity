@@ -8,10 +8,22 @@ html, body, #root {
   min-height: 100vh;
   margin: 0;
   padding: 0;
-  /* NO overflow: hidden here! */
 }
 
 .leaflet-container {
     outline: none !important;
     border: none !important;
+}
+
+/* --- ADD THIS TO FIX ANIMATION IN PRODUCTION --- */
+@keyframes dash-animation {
+  to {
+    stroke-dashoffset: -30; /* Matches the 10+20 dash array */
+  }
+}
+
+.marching-ants {
+  animation: dash-animation 1s linear infinite;
+  /* We define the array here AND in JS to be safe */
+  stroke-dasharray: 10, 20; 
 }
