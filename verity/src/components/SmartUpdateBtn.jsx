@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
+// 👇 CHANGE THIS LINE (Use only one "../")
+import { supabase } from '../lib/supabase'; 
 import { Loader2, CheckCircle, Clock, Server } from 'lucide-react';
 
 export const SmartUpdateBtn = () => {
@@ -10,7 +11,7 @@ export const SmartUpdateBtn = () => {
         setStatus('queuing');
         try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
+            if (!user) return alert("Please log in.");
 
             // 1. Get Ticket
             const res = await fetch('https://verity-ai.onrender.com/queue-update', {
@@ -41,6 +42,10 @@ export const SmartUpdateBtn = () => {
                     clearInterval(interval);
                     setStatus('success');
                     setTimeout(() => setStatus('idle'), 4000);
+                }
+                if (data.status === 'failed') {
+                    clearInterval(interval);
+                    setStatus('error');
                 }
             } catch { clearInterval(interval); }
         }, 1000);
