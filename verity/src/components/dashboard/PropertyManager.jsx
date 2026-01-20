@@ -5,8 +5,8 @@ import { Plus, Trash2, Image as ImageIcon, X, Save, FileSpreadsheet, Loader2, Up
 import * as XLSX from 'xlsx'; 
 import imageCompression from 'browser-image-compression';
 import Swal from 'sweetalert2';
+import { SmartUpdateBtn } from '../SmartUpdateBtn'; // <--- IMPORT THIS
 
-// --- TOAST CONFIGURATION ---
 const Toast = Swal.mixin({
   toast: true,
   position: 'top-end',
@@ -25,10 +25,7 @@ export const PropertyManager = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  
-  // [NEW] Selection State for Mass Delete
   const [selectedIds, setSelectedIds] = useState(new Set());
-
   const [editingId, setEditingId] = useState(null);
   
   const fileInputRef = useRef(null);
@@ -43,21 +40,25 @@ export const PropertyManager = () => {
   });
 
   const fetchProperties = async () => {
+    if (!user) return;
     setLoading(true);
-    const { data, error } = await supabase.from('properties').select('*').order('created_at', { ascending: false });
+    
+    // --- [FIX] PRIVACY FILTER ADDED HERE ---
+    const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('user_id', user.id) // <--- CRITICAL FIX
+        .order('created_at', { ascending: false });
+
     if (!error) setProperties(data);
     setLoading(false);
   };
 
   useEffect(() => { if(user) fetchProperties(); }, [user]);
 
-  // --- SELECTION LOGIC ---
   const toggleSelectAll = () => {
-      if (selectedIds.size === properties.length) {
-          setSelectedIds(new Set()); // Deselect All
-      } else {
-          setSelectedIds(new Set(properties.map(p => p.id))); // Select All
-      }
+      if (selectedIds.size === properties.length) setSelectedIds(new Set());
+      else setSelectedIds(new Set(properties.map(p => p.id)));
   };
 
   const toggleSelectRow = (id) => {
@@ -67,49 +68,40 @@ export const PropertyManager = () => {
       setSelectedIds(newSet);
   };
 
-  // --- MASS DELETE LOGIC ---
   const handleMassDelete = async () => {
       if (selectedIds.size === 0) return;
-
       const result = await Swal.fire({
           title: `Delete ${selectedIds.size} Properties?`,
           text: "This action cannot be undone.",
           icon: 'warning',
           showCancelButton: true,
           confirmButtonColor: '#d33',
-          cancelButtonColor: '#3085d6',
           confirmButtonText: 'Yes, delete all'
       });
 
       if (result.isConfirmed) {
           const idsToDelete = Array.from(selectedIds);
           const { error } = await supabase.from('properties').delete().in('id', idsToDelete);
-
           if (error) {
               Swal.fire('Error', error.message, 'error');
           } else {
-              setSelectedIds(new Set()); // Clear selection
+              setSelectedIds(new Set());
               fetchProperties();
               Toast.fire({ icon: 'success', title: 'Properties Deleted' });
           }
       }
   };
 
-  // --- EXCEL LOGIC ---
   const handleDownloadTemplate = () => {
       const headers = [{ Name: "The Alcove", Price: "₱12M", Location: "Cebu IT Park", "Lat,Lng": "10.3157, 123.8854", Description: "Luxury condo...", Beds: "2", Baths: "2", SQM: "56" }];
       const ws = XLSX.utils.json_to_sheet(headers);
-      ws['!cols'] = [{ wch: 20 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 30 }, { wch: 5 }, { wch: 5 }, { wch: 5 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Template");
       XLSX.writeFile(wb, "Verity_Properties_Template.xlsx");
-      Toast.fire({ icon: 'success', title: 'Template Downloaded' });
   };
 
   const processRawData = async (rawRows) => {
-      if (!rawRows || rawRows.length < 2) {
-          return Toast.fire({ icon: 'warning', title: 'File is empty' });
-      }
+      if (!rawRows || rawRows.length < 2) return Toast.fire({ icon: 'warning', title: 'File is empty' });
       if (!user) return;
 
       let headerIdx = -1;
@@ -118,9 +110,7 @@ export const PropertyManager = () => {
           if (rowStr.includes('name') && rowStr.includes('price')) { headerIdx = i; break; }
       }
       
-      if (headerIdx === -1) {
-          return Swal.fire('Invalid Format', 'Could not find "Name" and "Price" columns.', 'error');
-      }
+      if (headerIdx === -1) return Swal.fire('Invalid Format', 'Could not find "Name" and "Price" columns.', 'error');
 
       const headers = rawRows[headerIdx].map(h => String(h).trim().toLowerCase());
       const newItems = rawRows.slice(headerIdx + 1).map(row => {
@@ -139,24 +129,17 @@ export const PropertyManager = () => {
               lat: lat || 0, lng: lng || 0, description: item['description'] || '',
               user_id: user.id, org_id: 'org_cebu_landmasters_001', 
               status: 'active', type: 'condo', main_image: '', gallery_images: [], 
-              specs: { 
-                  beds: item['beds'] || 0, 
-                  baths: item['baths'] || 0, 
-                  sqm: item['sqm'] || 0 
-              } 
+              specs: { beds: item['beds'] || 0, baths: item['baths'] || 0, sqm: item['sqm'] || 0 } 
           };
       }).filter(item => item && item.name);
 
-      if (newItems.length === 0) {
-          return Toast.fire({ icon: 'info', title: 'No valid rows found' });
-      }
+      if (newItems.length === 0) return Toast.fire({ icon: 'info', title: 'No valid rows found' });
 
       setLoading(true);
       const { error } = await supabase.from('properties').insert(newItems);
       
-      if (error) {
-          Swal.fire('Import Failed', error.message, 'error');
-      } else {
+      if (error) Swal.fire('Import Failed', error.message, 'error');
+      else {
           Toast.fire({ icon: 'success', title: `Imported ${newItems.length} properties!` });
           fetchProperties();
       }
@@ -176,7 +159,6 @@ export const PropertyManager = () => {
       reader.readAsBinaryString(file);
   };
 
-  // --- IMAGE LOGIC ---
   const handleImageProcess = async (files) => {
     if (!files || files.length === 0) return;
     setUploading(true);
@@ -194,32 +176,22 @@ export const PropertyManager = () => {
         }
         setFormData(prev => ({ ...prev, gallery_files: [...prev.gallery_files, ...newFiles] }));
         Toast.fire({ icon: 'success', title: 'Images uploaded!' });
-    } catch (error) { 
-        Toast.fire({ icon: 'error', title: 'Upload failed' });
-    } finally { 
-        setUploading(false); 
-    }
+    } catch (error) { Toast.fire({ icon: 'error', title: 'Upload failed' }); } 
+    finally { setUploading(false); }
   };
 
   const removeFile = (idxToRemove) => { setFormData(prev => ({ ...prev, gallery_files: prev.gallery_files.filter((_, idx) => idx !== idxToRemove) })); };
   const handleDrag = (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(e.type === "dragenter" || e.type === "dragover"); };
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); if (e.dataTransfer.files) handleImageProcess(e.dataTransfer.files); };
 
-  // --- EDIT LOGIC ---
   const openEditModal = (prop) => {
       setEditingId(prop.id);
       setFormData({
-          name: prop.name,
-          price: prop.price,
-          location: prop.location,
-          coords: `${prop.lat}, ${prop.lng}`, 
-          description: prop.description || '',
+          name: prop.name, price: prop.price, location: prop.location,
+          coords: `${prop.lat}, ${prop.lng}`, description: prop.description || '',
           org_id: prop.org_id || 'org_cebu_landmasters_001',
           gallery_files: prop.gallery_images ? prop.gallery_images.map((url, i) => ({ url, name: `Image ${i+1}` })) : [],
-          
-          beds: prop.specs?.beds || '',
-          baths: prop.specs?.baths || '',
-          sqm: prop.specs?.sqm || ''
+          beds: prop.specs?.beds || '', baths: prop.specs?.baths || '', sqm: prop.specs?.sqm || ''
       });
       setIsModalOpen(true);
   };
@@ -233,11 +205,9 @@ export const PropertyManager = () => {
       setIsModalOpen(true);
   };
 
-  // --- SAVE LOGIC ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     setUploading(true);
-
     if (!user) { setUploading(false); return Toast.fire({ icon: 'error', title: 'Login required' }); }
     if (!formData.name || !formData.price) { setUploading(false); return Toast.fire({ icon: 'warning', title: 'Name & Price required' }); }
 
@@ -248,24 +218,12 @@ export const PropertyManager = () => {
     }
 
     const galleryUrls = formData.gallery_files.map(f => f.url);
-    const mainImage = galleryUrls.length > 0 ? galleryUrls[0] : '';
-
     const payload = {
-        name: formData.name,
-        price: formData.price,
-        location: formData.location,
-        lat, lng, 
-        description: formData.description,
-        user_id: user.id,
-        org_id: formData.org_id,
-        main_image: mainImage,
+        name: formData.name, price: formData.price, location: formData.location, lat, lng, 
+        description: formData.description, user_id: user.id, org_id: formData.org_id,
+        main_image: galleryUrls.length > 0 ? galleryUrls[0] : '',
         gallery_images: galleryUrls,
-        
-        specs: {
-            beds: formData.beds,
-            baths: formData.baths,
-            sqm: formData.sqm
-        }
+        specs: { beds: formData.beds, baths: formData.baths, sqm: formData.sqm }
     };
 
     let error;
@@ -278,14 +236,10 @@ export const PropertyManager = () => {
     }
 
     setUploading(false);
-    
     if (!error) {
         setIsModalOpen(false);
         fetchProperties();
-        Toast.fire({
-            icon: 'success',
-            title: editingId ? 'Property Updated' : 'Property Added'
-        });
+        Toast.fire({ icon: 'success', title: editingId ? 'Property Updated' : 'Property Added' });
     } else {
         Swal.fire('Error', error.message, 'error');
     }
@@ -293,24 +247,13 @@ export const PropertyManager = () => {
 
   const handleDelete = async (id) => {
     const result = await Swal.fire({
-        title: 'Delete Property?',
-        text: "This cannot be undone.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Delete'
+        title: 'Delete Property?', text: "This cannot be undone.", icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Delete'
     });
-
     if (result.isConfirmed) {
         const { error } = await supabase.from('properties').delete().eq('id', id);
-        
-        if (error) {
-            Swal.fire('Error', `Failed: ${error.message}`, 'error');
-        } else {
-            Toast.fire({ icon: 'success', title: 'Property Deleted' });
-            fetchProperties();
-        }
+        if (error) Swal.fire('Error', error.message, 'error');
+        else { Toast.fire({ icon: 'success', title: 'Property Deleted' }); fetchProperties(); }
     }
   };
 
@@ -320,7 +263,6 @@ export const PropertyManager = () => {
         <div className="flex justify-between items-center mb-6 shrink-0">
             <div><h1 className="text-2xl font-bold text-gray-900">Property Listings</h1><p className="text-sm text-gray-500">Manage inventory.</p></div>
             <div className="flex gap-2 items-center">
-                {/* [NEW] Mass Delete Button (Only shows if items selected) */}
                 {selectedIds.size > 0 && (
                     <button onClick={handleMassDelete} className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 font-bold rounded-xl hover:bg-red-100 flex items-center gap-2 shadow-sm transition animate-in fade-in">
                         <Trash2 size={18} /> Delete Selected ({selectedIds.size})
@@ -328,9 +270,12 @@ export const PropertyManager = () => {
                 )}
 
                 <div className="h-6 w-px bg-gray-300 mx-2"></div>
+                
+                {/* [NEW] AI Update Button */}
+                <SmartUpdateBtn />
 
                 <input ref={fileInputRef} type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileImport} />
-                <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 flex items-center gap-2 shadow-sm transition"><Download size={18} /> Template</button>
+                <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 flex items-center gap-2 shadow-sm transition"><Download size={18} /></button>
                 <button onClick={() => fileInputRef.current.click()} className="px-4 py-2 bg-white border border-gray-200 text-emerald-700 font-bold rounded-xl hover:bg-emerald-50 flex items-center gap-2 shadow-sm transition"><FileSpreadsheet size={18} /> Import Excel</button>
                 <button onClick={openNewModal} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-lg transition"><Plus size={18} /> Add Property</button>
             </div>
@@ -342,7 +287,6 @@ export const PropertyManager = () => {
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                         <tr>
-                            {/* [NEW] Select All Checkbox */}
                             <th className="p-4 w-10">
                                 <button onClick={toggleSelectAll} className="text-gray-400 hover:text-emerald-600 transition">
                                     {selectedIds.size > 0 && selectedIds.size === properties.length ? <CheckSquare size={20} className="text-emerald-600"/> : <Square size={20}/>}
@@ -359,17 +303,14 @@ export const PropertyManager = () => {
                     <tbody className="divide-y divide-gray-100">
                         {properties.map((prop) => (
                             <tr key={prop.id} className={`transition ${selectedIds.has(prop.id) ? 'bg-emerald-50/30' : 'hover:bg-gray-50'}`}>
-                                {/* [NEW] Row Checkbox */}
                                 <td className="p-4">
                                     <button onClick={() => toggleSelectRow(prop.id)} className="text-gray-300 hover:text-emerald-600 transition">
                                         {selectedIds.has(prop.id) ? <CheckSquare size={20} className="text-emerald-600"/> : <Square size={20}/>}
                                     </button>
                                 </td>
-                                
                                 <td className="p-4"><div className="w-10 h-10 rounded bg-gray-100 overflow-hidden border border-gray-200">{prop.main_image ? <img src={prop.main_image} className="w-full h-full object-cover"/> : <ImageIcon className="p-2 text-gray-400"/>}</div></td>
                                 <td className="p-4 font-bold text-gray-900">{prop.name}</td>
                                 <td className="p-4 font-mono text-emerald-600 font-bold">{prop.price}</td>
-                                
                                 <td className="p-4">
                                     <div className="flex items-center gap-3 text-xs text-gray-600">
                                         {prop.specs?.beds ? <span className="flex items-center gap-1"><Bed size={14}/> {prop.specs.beds}</span> : null}
@@ -377,10 +318,8 @@ export const PropertyManager = () => {
                                         {prop.specs?.sqm ? <span className="flex items-center gap-1"><Ruler size={14}/> {prop.specs.sqm}m²</span> : null}
                                     </div>
                                 </td>
-
                                 <td className="p-4 text-sm text-gray-600 max-w-[150px] truncate">{prop.location}</td>
                                 <td className="p-4 text-right">
-                                    {/* [FIX] Buttons are now distinct text-gray-500 (visible) instead of hidden */}
                                     <div className="flex justify-end gap-2">
                                         <button onClick={() => openEditModal(prop)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition" title="Edit"><Edit2 size={16}/></button>
                                         <button onClick={() => handleDelete(prop.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded transition" title="Delete"><Trash2 size={16}/></button>
@@ -393,7 +332,7 @@ export const PropertyManager = () => {
             </div>
         </div>
 
-        {/* MODAL (Unchanged Logic, just re-rendering) */}
+        {/* MODAL (Content is unchanged) */}
         {isModalOpen && (
             <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">

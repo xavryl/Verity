@@ -2,15 +2,13 @@ import { useState } from 'react';
 import { 
     Sparkles, X, Dumbbell, Dog, GraduationCap, ShieldCheck, 
     ShoppingBag, BrainCircuit, ArrowRight, RotateCcw, Loader2, Quote, Check,
-    BookOpen, MapPin
+    BookOpen
 } from 'lucide-react';
 
 export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [step, setStep] = useState('quiz');
     const [selectedTags, setSelectedTags] = useState([]); 
-    
-    // NEW: Store list of matches, and track which one is "Active"
     const [matches, setMatches] = useState([]); 
     const [activeIndex, setActiveIndex] = useState(0);
 
@@ -59,17 +57,14 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
             const enrichedMatches = data.matches.map(match => {
                 const realProp = properties.find(p => String(p.id) === String(match.id));
                 if (!realProp) return null;
-                return { ...match, ...realProp }; // Merge AI data + DB data
-            }).filter(Boolean); // Remove nulls
+                return { ...match, ...realProp }; 
+            }).filter(Boolean);
 
             if (enrichedMatches.length > 0) {
                 setMatches(enrichedMatches);
-                setActiveIndex(0); // Start with #1
+                setActiveIndex(0); 
                 
-                // Filter Map Pins
                 if (data.matched_ids && onFilter) onFilter(data.matched_ids);
-                
-                // Zoom to Winner
                 if (onRecommend) onRecommend(enrichedMatches[0]);
                 
                 setStep('result');
@@ -87,7 +82,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
 
     const handleSelectMatch = (index) => {
         setActiveIndex(index);
-        // Move Map to this property
         if (onRecommend) onRecommend(matches[index]);
     };
 
@@ -97,7 +91,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
         if (onFilter) onFilter(null); 
     };
 
-    // Current Active Match
     const activeMatch = matches[activeIndex];
 
     if (!isOpen) {
@@ -172,11 +165,10 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
                             <h5 className="text-violet-800 font-bold text-sm mb-1">{activeMatch.headline}</h5>
                             <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body}"</p>
                             
-                            {/* Tags */}
                             <div className="flex flex-wrap gap-1.5">
                                 {activeMatch.highlights.map((h, i) => (
                                     <span key={i} className="text-[9px] bg-white border border-violet-100 px-2 py-1 rounded-md text-violet-600 shadow-sm">
-                                        {h.split('(')[0]} {/* Shorten the tag name */}
+                                        {h.split('(')[0]}
                                     </span>
                                 ))}
                             </div>

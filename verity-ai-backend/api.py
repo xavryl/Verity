@@ -1,183 +1,140 @@
 import os
 import pandas as pd
 import numpy as np
-from supabase import create_client
-from geopy.distance import geodesic
-from sklearn.neighbors import NearestNeighbors
 import joblib
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+import asyncio
+import uuid
+from contextlib import asynccontextmanager
+from supabase import create_client
+from sklearn.neighbors import BallTree
+from geopy.distance import geodesic
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-import random
 import tracery
 from tracery.modifiers import base_english
 
-# 1. SETUP
 load_dotenv()
-app = FastAPI()
 
-# --- CORS SETUP (The VIP List) ---
-origins = [
-    "http://localhost:5173",            # Local Dev
-    "http://127.0.0.1:5173",            # Local Dev Alternate
-    "https://verityph.space",           # Production Domain
-    "https://www.verityph.space",       # Production WWW
-    "https://verity-ai.onrender.com"    # The API Itself
-]
+# --- 1. GLOBAL STATE & QUEUE ---
+JOB_QUEUE = asyncio.Queue()       # The Waiting Line
+JOB_STATUS = {}                   # Tracks tickets
 
+AMENITY_BRAIN = None              # Static Data (Hospitals, etc.)
+PROPERTY_BRAIN = pd.DataFrame()   # Dynamic Data (User Properties)
+
+supabase = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
+
+CATEGORIES = {
+    'safety': ['police', 'fire', 'barangay', 'station'],
+    'health': ['hospital', 'clinic', 'pharmacy', 'vet'],
+    'education': ['school', 'college', 'university', 'campus'],
+    'lifestyle': ['gym', 'mall', 'market', 'park', 'cafe']
+}
+
+grammar_source = {
+    "opener": ["Forget the traffic.", "The smart move.", "Living made easy."],
+    "distance_adj": ["steps away", "just around the corner", "nearby"],
+    "default_headline": "Prime Location",
+    "default_body": "Ideally situated with {name} #distance_adj#."
+}
+
+# --- 2. THE BACKGROUND WORKER ---
+async def queue_worker():
+    print("👷 [Worker] Online. Waiting for jobs...")
+    while True:
+        job = await JOB_QUEUE.get()
+        job_id, user_id = job['job_id'], job['user_id']
+        
+        try:
+            JOB_STATUS[job_id] = "processing"
+            print(f"⚙️ [Worker] Processing User: {user_id}...")
+            
+            # A. Fetch ONLY this user's properties
+            resp = supabase.table('properties').select("*").eq('user_id', user_id).execute()
+            user_props = pd.DataFrame(resp.data)
+            
+            # B. Atomic Update (The Swap)
+            global PROPERTY_BRAIN
+            if not user_props.empty:
+                new_brain = PROPERTY_BRAIN.copy()
+                
+                # Remove this user's old data to avoid duplicates
+                if not new_brain.empty and 'user_id' in new_brain.columns:
+                    new_brain = new_brain[new_brain['user_id'] != user_id]
+                
+                # Add new data
+                new_brain = pd.concat([new_brain, user_props], ignore_index=True)
+                
+                # SWAP
+                PROPERTY_BRAIN = new_brain
+                joblib.dump(PROPERTY_BRAIN, 'properties.pkl')
+                
+            JOB_STATUS[job_id] = "completed"
+            print(f"✅ [Worker] Done. Brain Size: {len(PROPERTY_BRAIN)}")
+            
+        except Exception as e:
+            print(f"❌ [Worker] Failed: {e}")
+            JOB_STATUS[job_id] = "failed"
+        finally:
+            JOB_QUEUE.task_done()
+
+# --- 3. LIFESPAN MANAGER ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load Brains on Startup
+    global AMENITY_BRAIN, PROPERTY_BRAIN
+    if os.path.exists('amenities.pkl'): AMENITY_BRAIN = joblib.load('amenities.pkl')
+    if os.path.exists('properties.pkl'): PROPERTY_BRAIN = joblib.load('properties.pkl')
+    
+    # Start Worker
+    asyncio.create_task(queue_worker())
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+# Allow your specific frontend URLs
+origins = ["http://localhost:5173", "https://verityph.space", "https://www.verityph.space"]
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins, 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
 
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_KEY")
-supabase = create_client(url, key)
+# --- 4. ENDPOINTS ---
 
-# 2. CONFIGURATION
-CATEGORIES = {
-    'safety': ['police', 'fire', 'barangay', 'station', 'security', 'outpost'],
-    'health': ['hospital', 'clinic', 'pharmacy', 'vet', 'dental', 'medical'],
-    'education': ['school', 'college', 'university', 'k-12', 'campus', 'institute'],
-    'lifestyle': ['gym', 'mall', 'market', 'park', 'cafe', 'restaurant', 'shop']
-}
-
-ai_brain = {}
-
-# --- TRACERY GRAMMAR (The Sentence Machine) ---
-grammar_source = {
-    # Building Blocks
-    "opener": [
-        "Forget the morning rush.", "Ditch the daily commute.",
-        "Why waste time in traffic?", "The smartest move you can make?",
-        "Imagine living this close to everything."
-    ],
-    "distance_adj": [
-        "practically next door", "just a stone's throw away",
-        "right around the corner", "literally steps away", "just a quick walk away"
-    ],
-    "benefit_student": [
-        "you can sleep in way longer", "you never have to be late again",
-        "you save hours every week", "more time for studying (or sleeping)"
-    ],
-    "benefit_fitness": [
-        "hitting your goals is effortless", "you'll never skip leg day again",
-        "wellness becomes part of your routine", "it's easier than ever to stay active"
-    ],
-    "benefit_general": [
-        "life just gets easier", "you save precious time",
-        "everything you need is within reach", "daily errands become a breeze"
-    ],
-    "connector": ["which means", "so", "giving you", "meaning"],
+@app.post("/train-amenities")
+def train_amenities():
+    """One-time setup for static amenities."""
+    global AMENITY_BRAIN
+    resp = supabase.table('amenities').select("*").execute()
+    df = pd.DataFrame(resp.data)
+    if df.empty: return {"error": "No data"}
     
-    # Combo Templates (When 2 items are selected)
-    "combo_headline": ["The Perfect Duo", "Double the Value", "Unmatched Convenience", "Connected Living", "Power Couple"],
-    "combo_body": [
-        "Enjoy the best of both worlds. You have easy access to {name1} while keeping {name2} #distance_adj#.",
-        "Why compromise? This property places you minutes away from both {name1} and {name2}.",
-        "Ideally positioned between {name1} and {name2}, #connector# #benefit_general#.",
-        "The ultimate balance: {name1} for your needs, and {name2} for your lifestyle."
-    ],
-
-    # Specific Persona Templates
-    "student_headline": ["Walk to Class", "Campus Life", "Student Haven", "The Ultimate Hack"],
-    "student_body": "#opener# {name} is #distance_adj#, #connector# #benefit_student#.",
-    "fitness_headline": ["Active Lifestyle", "Gym-Goer's Dream", "Wellness Central"],
-    "fitness_body": "No more excuses. {name} is #distance_adj#, #connector# #benefit_fitness#.",
-    "pets_headline": ["Pet-Lover's Haven", "Fur-Baby Approved", "Paws & Play"],
-    "pets_body": "Your furry friend will love this. {name} is #distance_adj#, ensuring emergency care is instant.",
-    "family_headline": ["Family First", "Safe & Secure", "Room to Grow"],
-    "family_body": "A perfect environment for your family. {name} is #distance_adj#, keeping your loved ones close.",
-    "default_headline": "Great Location",
-    "default_body": "This property is situated in a prime area, with {name} #distance_adj#."
-}
-
-# 3. BRAIN LOGIC
-def load_model():
-    global ai_brain
-    try:
-        if os.path.exists('verity_model.pkl'):
-            ai_brain = joblib.load('verity_model.pkl')
-            print("✅ Brain loaded.")
-        else:
-            print("⚠️ No brain found. Auto-training now...")
-            train_brain()
-    except Exception as e:
-        print(f"❌ Error loading brain: {e}")
-
-def train_brain():
-    global ai_brain
-    print("\n🔄 RETRAINING STARTED...")
-    try:
-        props = supabase.table('properties').select("*").execute()
-        amens = supabase.table('amenities').select("*").execute()
-    except Exception: return False
-
-    properties = pd.DataFrame(props.data)
-    amenities = pd.DataFrame(amens.data)
-    if properties.empty: return False
-
-    feature_rows = []
-    metadata_list = []
-
-    for _, prop_row in properties.iterrows():
-        scores = {cat: 0.0 for cat in CATEGORIES.keys()}
-        nearest_info = {cat: None for cat in CATEGORIES.keys()} 
-        prop_loc = (prop_row['lat'], prop_row['lng'])
-
-        for _, amen in amenities.iterrows():
-            try:
-                if pd.isna(prop_row.get('lat')) or pd.isna(amen.get('lat')): continue
-                amen_loc = (amen['lat'], amen['lng'])
-                dist = geodesic(prop_loc, amen_loc).km
-                if dist > 8.0: continue
-                
-                impact = 1 / (dist + 0.5)
-                text = " ".join([str(amen.get(c, '')) for c in ['sub_category', 'type', 'name']]).lower()
-                
-                for cat, keywords in CATEGORIES.items():
-                    if any(k in text for k in keywords):
-                        scores[cat] += impact
-                        
-                        current_best = nearest_info[cat]
-                        if current_best is None or dist < current_best['dist']:
-                            type_name = str(amen.get('sub_category') or amen.get('type') or "Facility").title()
-                            specific_name = str(amen.get('name') or "Unnamed").title()
-                            nearest_info[cat] = {'type': type_name, 'specific_name': specific_name, 'dist': dist}
-            except: continue
-        
-        feature_rows.append(pd.Series(scores))
-        metadata_list.append(nearest_info)
-
-    feature_matrix = pd.DataFrame(feature_rows)
-    model = NearestNeighbors(n_neighbors=1, algorithm='brute', metric='euclidean')
-    model.fit(feature_matrix)
-
-    new_brain = {
-        'model': model,
-        'ids': properties['id'].values,
-        'names': properties['name'].values,
-        'features': feature_matrix,
-        'metadata': metadata_list
-    }
+    df['lat_rad'] = np.radians(df['lat'])
+    df['lng_rad'] = np.radians(df['lng'])
+    tree = BallTree(df[['lat_rad', 'lng_rad']], metric='haversine')
     
-    joblib.dump(new_brain, 'verity_model.pkl')
-    ai_brain = new_brain
-    print("✅ RETRAINING COMPLETE.")
-    return True
+    brain = {"tree": tree, "data": df}
+    joblib.dump(brain, 'amenities.pkl')
+    AMENITY_BRAIN = brain
+    return {"status": "Amenities Retrained"}
 
-@app.on_event("startup")
-async def startup_event():
-    load_model()
+class QueueRequest(BaseModel):
+    user_id: str
 
-@app.post("/retrain")
-def trigger_retrain(background_tasks: BackgroundTasks):
-    background_tasks.add_task(train_brain)
-    return {"message": "Training started."}
+@app.post("/queue-update")
+async def queue_update(req: QueueRequest):
+    """Adds user to the line."""
+    job_id = str(uuid.uuid4())
+    await JOB_QUEUE.put({"job_id": job_id, "user_id": req.user_id})
+    position = JOB_QUEUE.qsize()
+    return {"job_id": job_id, "position": position, "estimated_wait": position * 2}
+
+@app.get("/queue-status/{job_id}")
+def check_status(job_id: str):
+    status = JOB_STATUS.get(job_id, "unknown")
+    if status == "completed": del JOB_STATUS[job_id]
+    return {"status": status}
 
 class UserPreference(BaseModel):
     personas: list[str]
@@ -186,106 +143,59 @@ class UserPreference(BaseModel):
     education_priority: float
     lifestyle_priority: float
 
-def generate_persuasive_copy(personas, data):
-    category_map = {
-        'student': 'education', 'family': 'education',
-        'pets': 'health', 'retirement': 'health',     
-        'fitness': 'lifestyle', 'safety': 'safety', 'convenience': 'lifestyle'
-    }
+def score_property(prop_lat, prop_lng):
+    if not AMENITY_BRAIN: return {}, {}
+    radius_rad = 2.0 / 6371.0
+    indices = AMENITY_BRAIN["tree"].query_radius([[np.radians(prop_lat), np.radians(prop_lng)]], r=radius_rad)[0]
+    if len(indices) == 0: return {}, {}
+
+    nearby = AMENITY_BRAIN["data"].iloc[indices]
+    scores = {cat: 0.0 for cat in CATEGORIES.keys()}
+    metadata = {}
+
+    for _, amen in nearby.iterrows():
+        dist_km = geodesic((prop_lat, prop_lng), (amen['lat'], amen['lng'])).km
+        impact = 1 / (dist_km + 0.5)
+        text = str(amen['sub_category'] or amen['type'] or amen['name']).lower()
+        for cat, keywords in CATEGORIES.items():
+            if any(k in text for k in keywords):
+                scores[cat] += impact
+                if cat not in metadata or dist_km < metadata[cat]['dist']:
+                    metadata[cat] = {'name': amen['name'], 'type': amen['sub_category'], 'dist': round(dist_km, 2)}
+    return scores, metadata
+
+def generate_copy(personas, metadata):
     grammar = tracery.Grammar(grammar_source)
     grammar.add_modifiers(base_english)
-
-    matches = []
-    for p in personas:
-        cat = category_map.get(p, 'lifestyle')
-        if data.get(cat):
-            matches.append({
-                'persona': p,
-                'name': data[cat]['specific_name'],
-                'dist': data[cat]['dist']
-            })
-    
-    matches.sort(key=lambda x: x['dist'])
-    close_matches = [m for m in matches if m['dist'] <= 1.5]
-
-    if len(close_matches) >= 2:
-        m1 = close_matches[0]
-        m2 = close_matches[1]
-        headline = grammar.flatten("#combo_headline#")
-        body_template = grammar.flatten("#combo_body#")
-        return headline, body_template.format(name1=m1['name'], name2=m2['name'])
-
-    if not matches: return "Great Location", "Prime location with easy access to the city."
-    
-    min_dist = matches[0]['dist']
-    candidates = [m for m in matches if m['dist'] <= min_dist + 0.1]
-    best_match = random.choice(candidates)
-    
-    persona_key = best_match['persona']
-    headline_rule = f"#{persona_key}_headline#"
-    body_rule = f"#{persona_key}_body#"
-    
-    if persona_key + "_headline" not in grammar_source:
-        headline_rule = "#default_headline#"
-        body_rule = "#default_body#"
-
-    headline = grammar.flatten(headline_rule)
-    body_template = grammar.flatten(body_rule)
-    return headline, body_template.format(name=best_match['name'])
-
-def build_highlights(data):
-    items = []
-    for cat, info in data.items():
-        if info and info['dist'] < 3.0: 
-             items.append(f"{info['type']} is close ({info['specific_name']}) at {info['dist']:.1f}km")
-    return items[:3]
+    target = 'lifestyle'
+    if 'student' in personas: target = 'education'
+    elif 'health' in personas: target = 'health'
+    if target in metadata:
+        info = metadata[target]
+        return f"Near {str(info['type']).title()}", grammar.flatten(f"Enjoy easy access to {info['name']} #distance_adj#.")
+    return "Great Location", "A perfectly connected home."
 
 @app.post("/recommend")
 def recommend(pref: UserPreference):
-    if not ai_brain: raise HTTPException(status_code=503, detail="Training")
-
-    # 1. Math Search
-    user_vector = pd.DataFrame([[
-        pref.safety_priority * 5.0,
-        pref.health_priority * 5.0,
-        pref.education_priority * 5.0,
-        pref.lifestyle_priority * 5.0
-    ]], columns=['safety', 'health', 'education', 'lifestyle'])
-    
-    # 2. Get Top 10 Matches
-    n_matches = min(10, len(ai_brain['ids']))
-    distances, indices = ai_brain['model'].kneighbors(user_vector, n_neighbors=n_matches)
-    
-    # 3. Generate Details for ALL 10
+    if PROPERTY_BRAIN.empty: return {"matches": []}
     results = []
-    matched_ids = []
-
-    for i in range(n_matches):
-        idx = indices[0][i]
-        
-        # --- FIXED: Use String for UUIDs ---
-        prop_id = str(ai_brain['ids'][idx]) 
-        
-        prop_name = ai_brain['names'][idx]
-        metadata = ai_brain['metadata'][idx]
-        
-        # Generate unique copy for THIS property
-        headline, body = generate_persuasive_copy(pref.personas, metadata)
-        
-        results.append({
-            "id": prop_id,
-            "name": prop_name,
-            "headline": headline,
-            "body": body,
-            "highlights": build_highlights(metadata)
-        })
-        matched_ids.append(prop_id)
-
-    return {
-        "matches": results,
-        "matched_ids": matched_ids
-    }
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    for _, row in PROPERTY_BRAIN.iterrows():
+        scores, metadata = score_property(row['lat'], row['lng'])
+        total = (
+            (pref.safety_priority * scores.get('safety', 0)) +
+            (pref.health_priority * scores.get('health', 0)) +
+            (pref.education_priority * scores.get('education', 0)) +
+            (pref.lifestyle_priority * scores.get('lifestyle', 0))
+        )
+        if total > 0.1:
+            headline, body = generate_copy(pref.personas, metadata)
+            results.append({
+                "id": str(row['id']),
+                "name": row['name'],
+                "match_score": total,
+                "headline": headline,
+                "body": body,
+                "highlights": [f"{v['type']} ({v['dist']}km)" for k,v in metadata.items()][:3]
+            })
+    results.sort(key=lambda x: x['match_score'], reverse=True)
+    return {"matches": results[:10], "matched_ids": [r['id'] for r in results[:10]]}
