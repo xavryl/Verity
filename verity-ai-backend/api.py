@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from supabase import create_client
 from sklearn.neighbors import BallTree
 from geopy.distance import geodesic
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -17,14 +17,17 @@ from tracery.modifiers import base_english
 
 load_dotenv()
 
-# --- 1. GLOBAL STATE & QUEUE ---
-JOB_QUEUE = asyncio.Queue()       # The Waiting Line
-JOB_STATUS = {}                   # Tracks tickets
+# --- 1. CONFIGURATION ---
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-AMENITY_BRAIN = None              # Static Data (Hospitals, etc.)
-PROPERTY_BRAIN = pd.DataFrame()   # Dynamic Data (User Properties)
+JOB_QUEUE = asyncio.Queue()
+JOB_STATUS = {}
 
-supabase = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
+# Global Brains
+AMENITY_BRAIN = None
+PROPERTY_BRAIN = pd.DataFrame()
 
 CATEGORIES = {
     'safety': ['police', 'fire', 'barangay', 'station'],
@@ -40,7 +43,38 @@ grammar_source = {
     "default_body": "Ideally situated with {name} #distance_adj#."
 }
 
-# --- 2. THE BACKGROUND WORKER ---
+# --- 2. SNAPSHOT FUNCTIONS (The Backup System) ---
+
+def save_backup_to_cloud(filename, data):
+    """Saves to local disk AND uploads to Supabase Storage as a backup."""
+    try:
+        # 1. Save locally so current server works
+        joblib.dump(data, filename)
+        
+        # 2. Upload to Supabase 'ai_models' bucket
+        with open(filename, 'rb') as f:
+            supabase.storage.from_('ai_models').upload(
+                path=filename, 
+                file=f, 
+                file_options={"cache-control": "3600", "upsert": "true"}
+            )
+        print(f"☁️ [Backup] Uploaded {filename} to Supabase.")
+    except Exception as e:
+        print(f"⚠️ [Backup] Upload Failed (Network issue?): {e}")
+
+def load_backup_from_cloud(filename):
+    """Downloads from Supabase Storage if Database fails."""
+    try:
+        print(f"☁️ [Backup] Downloading {filename}...")
+        data = supabase.storage.from_('ai_models').download(filename)
+        with open(filename, 'wb') as f:
+            f.write(data)
+        return joblib.load(filename)
+    except Exception as e:
+        print(f"❌ [Backup] Cloud Download Failed: {e}")
+        return None
+
+# --- 3. BACKGROUND WORKER (Updates & Saves Snapshots) ---
 async def queue_worker():
     print("👷 [Worker] Online. Waiting for jobs...")
     while True:
@@ -49,62 +83,109 @@ async def queue_worker():
         
         try:
             JOB_STATUS[job_id] = "processing"
-            print(f"⚙️ [Worker] Processing User: {user_id}...")
+            print(f"⚙️ Processing User: {user_id}...")
             
-            # A. Fetch ONLY this user's properties
+            # A. Fetch User Data from DB
             resp = supabase.table('properties').select("*").eq('user_id', user_id).execute()
             user_props = pd.DataFrame(resp.data)
             
-            # B. Atomic Update (The Swap)
             global PROPERTY_BRAIN
             if not user_props.empty:
                 new_brain = PROPERTY_BRAIN.copy()
                 
-                # Remove this user's old data to avoid duplicates
+                # Remove old user data
                 if not new_brain.empty and 'user_id' in new_brain.columns:
                     new_brain = new_brain[new_brain['user_id'] != user_id]
                 
-                # Add new data
+                # Add new user data
                 new_brain = pd.concat([new_brain, user_props], ignore_index=True)
                 
-                # SWAP
+                # B. Update Live Brain
                 PROPERTY_BRAIN = new_brain
-                joblib.dump(PROPERTY_BRAIN, 'properties.pkl')
+                
+                # C. Save Snapshot (Belt & Suspenders)
+                # We save locally AND upload to Supabase every time someone trains.
+                save_backup_to_cloud('properties.pkl', PROPERTY_BRAIN)
                 
             JOB_STATUS[job_id] = "completed"
-            print(f"✅ [Worker] Done. Brain Size: {len(PROPERTY_BRAIN)}")
             
         except Exception as e:
-            print(f"❌ [Worker] Failed: {e}")
+            print(f"❌ Failed: {e}")
             JOB_STATUS[job_id] = "failed"
         finally:
             JOB_QUEUE.task_done()
 
-# --- 3. LIFESPAN MANAGER ---
+# --- 4. STARTUP LOGIC (Try DB -> Failover to Cloud) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load Brains on Startup
     global AMENITY_BRAIN, PROPERTY_BRAIN
-    if os.path.exists('amenities.pkl'): AMENITY_BRAIN = joblib.load('amenities.pkl')
-    if os.path.exists('properties.pkl'): PROPERTY_BRAIN = joblib.load('properties.pkl')
-    
-    # Start Worker
+    print("🚀 Server starting up...")
+
+    # --- PART 1: AMENITIES ---
+    # Try loading from local file first (Fastest)
+    if os.path.exists('amenities.pkl'):
+        AMENITY_BRAIN = joblib.load('amenities.pkl')
+        print("✅ Amenities loaded from local cache.")
+    else:
+        # If missing, try Cloud Snapshot (Fast)
+        cloud_amenities = load_backup_from_cloud('amenities.pkl')
+        if cloud_amenities:
+            AMENITY_BRAIN = cloud_amenities
+            print("✅ Amenities loaded from Cloud Backup.")
+        else:
+            # If Cloud fails, Rebuild from DB (Slow but reliable)
+            print("🔄 Rebuilding Amenities from DB...")
+            try:
+                resp = supabase.table('amenities').select("*").execute()
+                df = pd.DataFrame(resp.data)
+                if not df.empty:
+                    df['lat_rad'] = np.radians(df['lat'])
+                    df['lng_rad'] = np.radians(df['lng'])
+                    tree = BallTree(df[['lat_rad', 'lng_rad']], metric='haversine')
+                    brain = {"tree": tree, "data": df}
+                    AMENITY_BRAIN = brain
+                    save_backup_to_cloud('amenities.pkl', brain)
+            except Exception as e:
+                print(f"❌ Amenities Critical Fail: {e}")
+
+    # --- PART 2: PROPERTIES ---
+    # STRATEGY: Always prefer DB for freshness, use Snapshot if DB fails.
+    print("🔄 [Properties] Attempting Database Rebuild...")
+    try:
+        resp = supabase.table('properties').select("*").execute()
+        df = pd.DataFrame(resp.data)
+        
+        if not df.empty:
+            PROPERTY_BRAIN = df
+            print(f"✅ [Properties] Rebuilt from Live DB ({len(df)} items).")
+            # Save this fresh version to cloud to keep backup updated
+            save_backup_to_cloud('properties.pkl', df)
+        else:
+            print("⚠️ DB returned empty. Trying backup...")
+            raise Exception("DB Empty")
+            
+    except Exception as e:
+        print(f"⚠️ Database fetch failed ({e}). Switching to Cloud Backup...")
+        # FALLBACK: Download the last known good state
+        cloud_props = load_backup_from_cloud('properties.pkl')
+        if cloud_props is not None:
+            PROPERTY_BRAIN = cloud_props
+            print(f"✅ [Properties] Recovered from Cloud Backup.")
+
     asyncio.create_task(queue_worker())
     yield
 
 app = FastAPI(lifespan=lifespan)
 
-# Allow your specific frontend URLs
 origins = ["http://localhost:5173", "https://verityph.space", "https://www.verityph.space"]
 app.add_middleware(
     CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
 
-# --- 4. ENDPOINTS ---
+# --- 5. ENDPOINTS ---
 
 @app.post("/train-amenities")
 def train_amenities():
-    """One-time setup for static amenities."""
     global AMENITY_BRAIN
     resp = supabase.table('amenities').select("*").execute()
     df = pd.DataFrame(resp.data)
@@ -115,33 +196,27 @@ def train_amenities():
     tree = BallTree(df[['lat_rad', 'lng_rad']], metric='haversine')
     
     brain = {"tree": tree, "data": df}
-    joblib.dump(brain, 'amenities.pkl')
     AMENITY_BRAIN = brain
-    return {"status": "Amenities Retrained"}
+    
+    # Save backup immediately
+    save_backup_to_cloud('amenities.pkl', brain)
+    
+    return {"status": "Amenities Retrained & Backed Up"}
 
 class QueueRequest(BaseModel):
     user_id: str
 
 @app.post("/queue-update")
 async def queue_update(req: QueueRequest):
-    """Adds user to the line."""
     job_id = str(uuid.uuid4())
     await JOB_QUEUE.put({"job_id": job_id, "user_id": req.user_id})
-    position = JOB_QUEUE.qsize()
-    return {"job_id": job_id, "position": position, "estimated_wait": position * 2}
+    return {"job_id": job_id, "position": JOB_QUEUE.qsize()}
 
 @app.get("/queue-status/{job_id}")
 def check_status(job_id: str):
     status = JOB_STATUS.get(job_id, "unknown")
     if status == "completed": del JOB_STATUS[job_id]
     return {"status": status}
-
-class UserPreference(BaseModel):
-    personas: list[str]
-    safety_priority: float
-    health_priority: float
-    education_priority: float
-    lifestyle_priority: float
 
 def score_property(prop_lat, prop_lng):
     if not AMENITY_BRAIN: return {}, {}
@@ -174,6 +249,13 @@ def generate_copy(personas, metadata):
         info = metadata[target]
         return f"Near {str(info['type']).title()}", grammar.flatten(f"Enjoy easy access to {info['name']} #distance_adj#.")
     return "Great Location", "A perfectly connected home."
+
+class UserPreference(BaseModel):
+    personas: list[str]
+    safety_priority: float
+    health_priority: float
+    education_priority: float
+    lifestyle_priority: float
 
 @app.post("/recommend")
 def recommend(pref: UserPreference):

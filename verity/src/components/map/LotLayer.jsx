@@ -1,86 +1,116 @@
-// src/components/map/LotLayer.jsx
 import { useEffect, useState } from 'react';
-import { Polygon, Popup } from 'react-leaflet';
-import { supabase } from '../../lib/supabase'; // IMPORT SUPABASE
+import { LayerGroup, Polygon, Tooltip, Popup } from 'react-leaflet';
+import { supabase } from '../../lib/supabase';
 
-export const LotLayer = ({ onInquire }) => {
-  const [lots, setLots] = useState([]);
+export const LotLayer = ({ mapId, onInquire }) => {
+    const [lots, setLots] = useState([]);
 
-  // FETCH REAL DATA FROM DB
-  useEffect(() => {
-    const fetchLots = async () => {
-      const { data, error } = await supabase.from('lots').select('*');
-      if (!error && data) {
-        setLots(data);
-      }
-    };
+    // Fetch lots when mapId changes
+    useEffect(() => {
+        if (!mapId) return;
 
-    fetchLots();
+        const fetchLots = async () => {
+            const { data } = await supabase
+                .from('lots')
+                .select('*')
+                .eq('map_id', mapId);
+            
+            if (data) setLots(data);
+        };
 
-    // OPTIONAL: REAL-TIME SUBSCRIPTION
-    // This makes the map update instantly without refreshing if an admin changes a status
-    const channel = supabase
-      .channel('public:lots')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lots' }, (payload) => {
-          fetchLots(); // Simple re-fetch strategy on change
-      })
-      .subscribe();
+        fetchLots();
+    }, [mapId]);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+    if (!lots || lots.length === 0) return null;
 
-  if (lots.length === 0) return null;
-
-  return (
-    <>
-      {lots.map(lot => (
-        <Polygon 
-            key={lot.id}
-            // GeoJSON stores as [Lng, Lat], Leaflet needs [Lat, Lng]
-            // We assume lot.geometry is the standard GeoJSON "coordinates" array
-            positions={lot.geometry[0].map(coord => [coord[1], coord[0]])}
-            pathOptions={{
-                color: lot.status === 'available' ? '#10b981' : '#ef4444',
-                fillOpacity: 0.2,
-                weight: 1,
-                className: 'cursor-pointer hover:fill-opacity-40 transition-all duration-300' 
-            }}
-            eventHandlers={{
-                click: () => {
-                    // Only open inquire for available lots, or show status for sold
-                    if (lot.status === 'available') {
-                        // Optional: trigger external handler if needed, 
-                        // but usually we let the Popup handle the "CTA"
-                    }
-                }
-            }}
-        >
-            <Popup>
-                <div className="text-center p-2 min-w-[120px]">
-                    <strong className="block text-sm mb-1">Lot {lot.id.toString().slice(-4)}</strong>
-                    <div className="text-xs text-gray-500 mb-2">
-                        {/* Placeholder for future "Specs" column if you add it to DB */}
-                        {lot.price ? `₱${(lot.price / 1000000).toFixed(1)}M` : 'Price TBD'} 
-                    </div>
-                    
-                    {lot.status === 'available' ? (
-                        <button 
-                            onClick={() => onInquire(`Lot #${lot.id.toString().slice(-4)}`)}
-                            className="bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full hover:bg-emerald-600 transition w-full shadow-sm"
+    return (
+        <LayerGroup>
+            {lots
+                // 1. CRITICAL: Sort so Boundaries render first (at the bottom)
+                // and Lots render last (on top)
+                .sort((a, b) => {
+                    if (a.type === 'boundary') return -1;
+                    if (b.type === 'boundary') return 1;
+                    return 0;
+                })
+                .map((lot) => (
+                <Polygon
+                    key={lot.id}
+                    positions={lot.geometry}
+                    pathOptions={{
+                        color: lot.type === 'boundary' ? '#3b82f6' : '#10b981', // Blue vs Green
+                        fillColor: lot.type === 'boundary' ? '#3b82f6' : 
+                                   lot.status === 'sold' ? '#ef4444' : 
+                                   lot.status === 'reserved' ? '#f59e0b' : '#10b981',
+                        fillOpacity: lot.type === 'boundary' ? 0.05 : 0.4,
+                        weight: lot.type === 'boundary' ? 3 : 1,
+                        dashArray: lot.type === 'boundary' ? '5, 5' : null
+                    }}
+                    eventHandlers={{
+                        // 2. CRITICAL: When hovering a LOT, bring it to front so you can click it
+                        mouseover: (e) => {
+                            const layer = e.target;
+                            if (lot.type !== 'boundary') {
+                                layer.setStyle({ fillOpacity: 0.7, weight: 3 });
+                                layer.bringToFront();
+                            }
+                        },
+                        // Reset style on mouse out
+                        mouseout: (e) => {
+                            const layer = e.target;
+                            if (lot.type !== 'boundary') {
+                                layer.setStyle({ 
+                                    fillOpacity: 0.4, 
+                                    weight: 1 
+                                });
+                            }
+                        }
+                    }}
+                >
+                    {/* Tooltip for Lots */}
+                    {lot.type === 'lot' && (
+                        <Tooltip 
+                            direction="center" 
+                            opacity={1} 
+                            permanent={true} 
+                            className="bg-transparent border-0 shadow-none font-bold text-xs text-white drop-shadow-md"
                         >
-                            Inquire Now
-                        </button>
-                    ) : (
-                        <span className="bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-full border border-red-200 block">
-                            SOLD OUT
-                        </span>
+                            {lot.lot_number}
+                        </Tooltip>
                     )}
-                </div>
-            </Popup>
-        </Polygon>
-      ))}
-    </>
-  );
+
+                    {/* Popup for Lots */}
+                    {lot.type === 'lot' && (
+                        <Popup>
+                            <div className="text-center p-2 min-w-[150px]">
+                                <h3 className="font-bold text-gray-900 text-lg">{lot.lot_number}</h3>
+                                <div className={`text-xs uppercase font-bold mb-3 px-2 py-1 rounded inline-block ${
+                                    lot.status === 'available' ? 'bg-emerald-100 text-emerald-700' :
+                                    lot.status === 'reserved' ? 'bg-orange-100 text-orange-700' :
+                                    'bg-red-100 text-red-700'
+                                }`}>
+                                    {lot.status}
+                                </div>
+                                
+                                {lot.price > 0 && (
+                                    <p className="text-xl text-gray-700 font-mono font-bold mb-3">
+                                        ₱{lot.price.toLocaleString()}
+                                    </p>
+                                )}
+
+                                {lot.status === 'available' && (
+                                    <button 
+                                        onClick={() => onInquire(lot)}
+                                        className="bg-gray-900 text-white w-full py-2 rounded-lg text-xs font-bold hover:bg-black transition shadow-lg"
+                                    >
+                                        Inquire Now
+                                    </button>
+                                )}
+                            </div>
+                        </Popup>
+                    )}
+                </Polygon>
+            ))}
+        </LayerGroup>
+    );
 };

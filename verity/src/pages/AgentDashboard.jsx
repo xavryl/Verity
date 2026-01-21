@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-    LayoutDashboard, Users, MessageSquare, 
+    LayoutDashboard, Users, 
     Map as MapIcon, Settings, Building2,
-    CheckCircle2, Search, Bell, 
+    CheckCircle2, 
     LogOut, UserCog, ExternalLink,
+    Map // [NEW] Added Map Icon for the button
 } from 'lucide-react';
 
 import { useLeads } from '../context/LeadContext';
@@ -15,11 +16,12 @@ import { ProfileSetup } from '../components/dashboard/ProfileSetup';
 import { LeadsBoard } from '../components/dashboard/LeadsBoard'; 
 import { WidgetBuilder } from '../components/dashboard/WidgetBuilder'; 
 import { VerityMap } from '../components/map/VerityMap'; 
+import { ProjectsManager } from '../components/dashboard/ProjectsManager'; 
+
 import './AgentDashboard.css';
 
-// --- OVERVIEW PANEL (UPDATED) ---
+// --- OVERVIEW PANEL ---
 const OverviewPanel = ({ profile }) => {
-    // We construct the public URL for the "Open Full Screen" button
     const mapUrl = `${window.location.origin}/map${profile?.public_key ? `?k=${profile.public_key}` : ''}`;
     
     return (
@@ -36,16 +38,10 @@ const OverviewPanel = ({ profile }) => {
                 )}
             </div>
             
-            {/* MAP CONTAINER */}
             <div className="w-full h-[600px] bg-gray-900 rounded-2xl shadow-xl border border-gray-200 overflow-hidden relative group shrink-0">
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-black/70 backdrop-blur text-white px-4 py-1.5 rounded-full text-xs font-bold pointer-events-none opacity-0 group-hover:opacity-100 transition duration-500">
                     Interact to test your map
                 </div>
-                
-                {/* [FIX] Removed 'customProperties'. 
-                   By letting VerityMap fetch data itself, it will grab BOTH properties 
-                   AND amenities, ensuring the 'Essentials' feature works.
-                */}
                 <VerityMap isEmbedded={true} />
             </div>
 
@@ -82,7 +78,6 @@ export const AgentDashboard = () => {
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const hasCheckedRef = useRef(false); 
   
-  // Toggle State & Handler
   const [crmEnabled, setCrmEnabled] = useState(false);
 
   const toggleCrmMode = async () => {
@@ -99,7 +94,6 @@ export const AgentDashboard = () => {
         return () => clearTimeout(timer);
     }
     
-    // Load CRM Preference from DB
     if (profile?.crm_enabled !== undefined) {
         const timer = setTimeout(() => {
             setCrmEnabled(profile.crm_enabled);
@@ -117,9 +111,15 @@ export const AgentDashboard = () => {
         <nav className="sidebar-nav">
            <div className="nav-section-label">Main</div>
            <NavBtn icon={LayoutDashboard} label="Overview" isActive={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
+           
+           {/* [NEW] PROJECTS BUTTON */}
+           <NavBtn icon={Map} label="Projects" isActive={activeTab === 'projects'} onClick={() => setActiveTab('projects')} />
+           
            <NavBtn icon={Users} label="Leads Board" isActive={activeTab === 'leads'} onClick={() => setActiveTab('leads')} />
            <NavBtn icon={Building2} label="Properties" isActive={activeTab === 'properties'} onClick={() => setActiveTab('properties')} />
-           <NavBtn icon={MessageSquare} label="Messages" badge="3" isActive={activeTab === 'messages'} onClick={() => setActiveTab('messages')} />
+           
+           {/* REMOVED MESSAGES BUTTON HERE */}
+
            <NavBtn icon={Settings} label="Builder" isActive={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
         </nav>
         
@@ -147,9 +147,10 @@ export const AgentDashboard = () => {
                     {activeTab === 'leads' ? 'Leads Pipeline' : 
                      activeTab === 'settings' ? 'Widget Builder' : 
                      activeTab === 'properties' ? 'Inventory Manager' : 
+                     activeTab === 'projects' ? 'Project Maps' : 
                      'Dashboard'}
                 </h1>
-                <div className="header-actions ml-auto"><div className="search-wrapper"><Search className="search-icon" size={18} /><input type="text" placeholder="Search..." className="search-input" /></div><button className="icon-btn"><Bell size={20} /><span className="badge-notification"></span></button></div>
+                {/* REMOVED SEARCH BAR AND NOTIFICATION BELL */}
             </header>
         )}
 
@@ -157,6 +158,7 @@ export const AgentDashboard = () => {
         {activeTab === 'overview' ? <OverviewPanel profile={profile} /> : 
          activeTab === 'settings' ? <WidgetBuilder profile={profile} /> : 
          activeTab === 'properties' ? <PropertyManager /> : 
+         activeTab === 'projects' ? <ProjectsManager /> : 
          activeTab === 'leads' ? (
              <LeadsBoard crmEnabled={crmEnabled} onToggleCrm={toggleCrmMode} />
          ) : 
@@ -168,7 +170,7 @@ export const AgentDashboard = () => {
       <div className="mobile-nav">
           <button onClick={() => setActiveTab('overview')} className="mobile-nav-item"><LayoutDashboard size={20}/>Home</button>
           <button onClick={() => setActiveTab('leads')} className="mobile-nav-item"><Users size={20}/>Leads</button>
-          <button onClick={() => setActiveTab('properties')} className="mobile-nav-item"><Building2 size={20}/>Props</button>
+          <button onClick={() => setActiveTab('projects')} className="mobile-nav-item"><Map size={20}/>Maps</button>
           <button onClick={() => setActiveTab('settings')} className="mobile-nav-item"><Settings size={20}/>Builder</button>
       </div>
 

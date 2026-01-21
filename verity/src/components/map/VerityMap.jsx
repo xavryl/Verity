@@ -8,6 +8,10 @@ import L from 'leaflet';
 import { supabase } from '../../lib/supabase';
 import { UnifiedPanel } from '../widget/UnifiedPanel';
 import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
+import { LotLayer } from './LotLayer'; 
+import { InquiryModal } from '../widget/InquiryModal'; 
+import { ConnectivityLayer } from './ConnectivityLayer'; // [NEW] Import Layer
+import { Wifi } from 'lucide-react'; // [NEW] Import Icon
 
 // --- CSS FOR ANIMATION ---
 const ANIMATION_STYLE = `
@@ -18,7 +22,6 @@ const ANIMATION_STYLE = `
     animation: dash-animation 1s linear infinite;
     stroke-dasharray: 10, 20; 
   }
-  /* Optional: Smooth transition for markers if supported by Leaflet CSS interactively */
   .leaflet-marker-icon {
     transition: width 0.2s, height 0.2s, margin-top 0.2s, margin-left 0.2s;
   }
@@ -56,7 +59,6 @@ const iconCache = {};
 
 const getAmenityIcon = (type, isHovered = false) => {
     const rawKey = type?.toLowerCase().trim();
-    // Create a unique cache key for normal vs hovered state
     const cacheKey = isHovered ? `${rawKey}_hover` : rawKey;
     
     if (iconCache[cacheKey]) return iconCache[cacheKey];
@@ -64,9 +66,8 @@ const getAmenityIcon = (type, isHovered = false) => {
     const fileName = AMENITY_ICONS[rawKey];
     let icon;
 
-    // Define sizes: Normal vs Large (Hovered)
     const size = isHovered ? [38, 48] : [28, 36]; 
-    const anchor = isHovered ? [19, 48] : [14, 36]; // Keep the point at the bottom center
+    const anchor = isHovered ? [19, 48] : [14, 36]; 
     const popupAnchor = isHovered ? [0, -42] : [0, -32];
 
     if (!fileName) {
@@ -173,9 +174,16 @@ export const VerityMap = ({ customProperties = null }) => {
     const [activeFilter, setActiveFilter] = useState(null); 
     const [subTypeFilter, setSubTypeFilter] = useState(null); 
     const [selectedAmenity, setSelectedAmenity] = useState(null);
-    
-    // [NEW] Hover State
     const [hoveredAmenityId, setHoveredAmenityId] = useState(null);
+
+    // [NEW] Filters & State
+    const [listingType, setListingType] = useState('all'); 
+    const [isInquiryOpen, setIsInquiryOpen] = useState(false);
+    const [selectedLotForInquiry, setSelectedLotForInquiry] = useState(null);
+    const [currentMapId, setCurrentMapId] = useState(null);
+    
+    // [NEW] Connectivity Toggle State
+    const [showSignal, setShowSignal] = useState(false);
 
     const [routeData, setRouteData] = useState(null);
     const [filteredIds, setFilteredIds] = useState(null);
@@ -211,29 +219,50 @@ export const VerityMap = ({ customProperties = null }) => {
         loadConfig();
     }, []);
 
+    // [UPDATED] Load Data Logic with Project Filter
     useEffect(() => {
         const loadData = async () => {
             if (customProperties) {
                 setProperties(customProperties);
                 return;
             }
-            let targetUserId = null;
+
             const params = new URLSearchParams(window.location.search);
-            const publicKey = params.get('k');
+            const mapId = params.get('map_id'); 
+            const publicKey = params.get('k');  
 
-            if (publicKey) {
-                const { data: profile } = await supabase.from('profiles').select('id').eq('public_key', publicKey).single();
-                if (profile) targetUserId = profile.id;
-            } else {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) targetUserId = user.id;
-            }
+            setCurrentMapId(mapId); // For LotLayer
 
-            if (targetUserId) {
-                const { data: props } = await supabase.from('properties').select('*').eq('user_id', targetUserId);
+            if (mapId) {
+                // STRATEGY A: Specific Map ID (Project View)
+                const { data: props } = await supabase
+                    .from('properties')
+                    .select('*')
+                    .eq('map_id', mapId);
+                
                 if (props) setProperties(props);
+
                 const { data: amens } = await supabase.from('amenities').select('*');
                 if (amens) setAmenities(amens);
+
+            } else if (publicKey) {
+                // STRATEGY B: Public Profile (Legacy)
+                const { data: profile } = await supabase.from('profiles').select('id').eq('public_key', publicKey).single();
+                if (profile) {
+                    const { data: props } = await supabase.from('properties').select('*').eq('user_id', profile.id);
+                    if (props) setProperties(props);
+                    const { data: amens } = await supabase.from('amenities').select('*');
+                    if (amens) setAmenities(amens);
+                }
+            } else {
+                // STRATEGY C: Dev Mode
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: props } = await supabase.from('properties').select('*').eq('user_id', user.id);
+                    if (props) setProperties(props);
+                    const { data: amens } = await supabase.from('amenities').select('*');
+                    if (amens) setAmenities(amens);
+                }
             }
         };
         loadData();
@@ -305,11 +334,17 @@ export const VerityMap = ({ customProperties = null }) => {
 
     const visibleProperties = useMemo(() => {
         if (selectedProp) return [selectedProp];
-        if (!filteredIds) return properties; 
-        return properties.filter(p => filteredIds.includes(p.id));
-    }, [properties, filteredIds, selectedProp]);
+        let filtered = properties;
+        if (listingType !== 'all') {
+            filtered = filtered.filter(p => (p.category || 'residential').toLowerCase() === listingType);
+        }
+        if (filteredIds) {
+            filtered = filtered.filter(p => filteredIds.includes(p.id));
+        }
+        return filtered;
+    }, [properties, filteredIds, selectedProp, listingType]);
 
-    // --- BACKGROUND FETCH QUEUE ---
+    // Background Fetch
     useEffect(() => {
         if (!selectedProp || !visibleAmenities.length) {
             return;
@@ -331,7 +366,7 @@ export const VerityMap = ({ customProperties = null }) => {
         }
     }, [visibleAmenities, preciseData, selectedProp]);
 
-    // --- HANDLERS ---
+    // Handlers
     const handlePropSelect = (prop) => {
         setSelectedProp(prop); 
         setPreciseData({}); 
@@ -370,35 +405,35 @@ export const VerityMap = ({ customProperties = null }) => {
         handlePropSelect(recommendedProp);
     };
 
+    const handleLotInquire = (lot) => {
+        setSelectedLotForInquiry(lot);
+        setIsInquiryOpen(true);
+    };
+
     const renderMarkers = () => {
         return visibleAmenities.map(amen => {
             const realData = preciseData[amen.id];
-            
-            // Check if this specific pin is selected OR hovered
             const isHovered = hoveredAmenityId === amen.id;
             const isSelected = selectedAmenity?.id === amen.id;
-            
-            // Use route data if clicked, or just the distance data if available
             const dataToShow = isSelected ? routeData : realData;
 
             return (
                 <Marker 
                     key={`amen-${amen.id}`} 
                     position={[amen.lat, amen.lng]} 
-                    // Pass isHovered or isSelected to get the larger icon
                     icon={getAmenityIcon(amen.sub_category || amen.type, isHovered || isSelected)}
-                    zIndexOffset={isHovered ? 1000 : 0} // Bring hovered item to front
+                    zIndexOffset={isHovered ? 1000 : 0}
                     eventHandlers={{ 
                         click: (e) => { 
                             L.DomEvent.stopPropagation(e); 
                             handleAmenityClick(amen); 
                         },
                         mouseover: (e) => {
-                            setHoveredAmenityId(amen.id); // Trigger enlargment
+                            setHoveredAmenityId(amen.id);
                             e.target.openPopup();
                         },
                         mouseout: (e) => {
-                            setHoveredAmenityId(null); // Reset size
+                            setHoveredAmenityId(null);
                             if (selectedAmenity?.id !== amen.id) {
                                 e.target.closePopup();
                             }
@@ -437,22 +472,62 @@ export const VerityMap = ({ customProperties = null }) => {
     return (
         <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
             
+            {/* TOGGLE BAR (Category + Signal) */}
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] flex gap-2 animate-in fade-in slide-in-from-top-4">
+                
+                {/* 1. Category Switcher */}
+                <div className="bg-white/90 backdrop-blur-sm p-1 rounded-full shadow-lg border border-gray-200 flex gap-1">
+                    {['all', 'residential', 'commercial'].map((type) => (
+                        <button
+                            key={type}
+                            onClick={() => setListingType(type)}
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
+                                listingType === type 
+                                ? 'bg-gray-900 text-white shadow-md' 
+                                : 'text-gray-500 hover:bg-gray-100'
+                            }`}
+                        >
+                            {type}
+                        </button>
+                    ))}
+                </div>
+
+                {/* 2. Signal Toggle [NEW] */}
+                <button
+                    onClick={() => setShowSignal(!showSignal)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1 shadow-lg ${
+                        showSignal 
+                        ? 'bg-violet-600 text-white shadow-violet-200' 
+                        : 'bg-white/90 text-gray-500 hover:bg-gray-100 border border-gray-200 backdrop-blur-sm'
+                    }`}
+                >
+                    <Wifi size={12} /> Signal
+                </button>
+
+            </div>
+            
             <MapContainer center={[10.3157, 123.8854]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
                 <TileLayer attribution='&copy; CARTO' url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png" />
                 <MapInvalidator />
                 <MapController selectedProperty={selectedProp} />
+
+                {/* [NEW] LOT LAYER */}
+                <LotLayer onInquire={handleLotInquire} mapId={currentMapId} />
+
+                {/* [NEW] CONNECTIVITY LAYER */}
+                {showSignal && <ConnectivityLayer />}
 
                 {routeData && (
                     <Polyline 
                         key={selectedAmenity?.id} 
                         positions={routeData.path} 
                         pathOptions={{ 
-                            className: 'marching-ants', // Calls the CSS injected above
+                            className: 'marching-ants',
                             color: '#3b82f6', 
                             weight: 5, 
                             opacity: 0.8, 
                             lineCap: "round",
-                            dashArray: '10, 20' // 10 dash + 20 gap = 30 total
+                            dashArray: '10, 20'
                         }} 
                     />
                 )}
@@ -503,6 +578,19 @@ export const VerityMap = ({ customProperties = null }) => {
                 subTypeFilter={subTypeFilter} 
                 onSubTypeSelect={setSubTypeFilter} 
             />
+
+            {/* [NEW] INQUIRY MODAL */}
+            {isInquiryOpen && (
+                <InquiryModal 
+                    isOpen={isInquiryOpen}
+                    onClose={() => {
+                        setIsInquiryOpen(false);
+                        setSelectedLotForInquiry(null);
+                    }}
+                    property={selectedLotForInquiry}
+                    isLot={true} 
+                />
+            )}
         </div>
     );
 };

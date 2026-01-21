@@ -1,11 +1,8 @@
-fastapi
-uvicorn
 pandas
 numpy
 scikit-learn
 supabase
 python-dotenv
-geopy
-tracery
-joblib
-pydantic
+requests
+fastapi
+uvicorn
