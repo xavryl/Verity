@@ -102,7 +102,7 @@ export const LandingPage = () => {
 
       {/* --- FOOTER --- */}
       <footer className="border-t border-gray-100 py-12 text-center">
-        <p className="text-slate-400 text-sm">© 2024 Project Verity. All Systems Operational.</p>
+        <p className="text-slate-400 text-sm">© 2026 Project Verity. All Systems Operational.</p>
       </footer>
     </div>
   );
