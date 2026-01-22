@@ -19,13 +19,40 @@ if not TOMTOM_KEY or "YOUR_KEY" in TOMTOM_KEY:
     exit()
 
 # Major Arteries in Cebu (The "Pulse" of the city)
+# Updated Major Arteries in Cebu based on the Route Index
 ROUTES = [
+    # --- PRIMARY BUSINESS ARTERIES ---
     {"name": "IT Park to Ayala", "start": "10.3296,123.9056", "end": "10.3175,123.9066"},
-    {"name": "Mactan Bridge (Mandaue to Lapu-Lapu)", "start": "10.3239,123.9372", "end": "10.3117,123.9784"},
+    {"name": "Banilad to Talamban Tintay", "start": "10.3404,123.9103", "end": "10.3700,123.9150"},
     {"name": "Osmena Blvd (Capitol to Colon)", "start": "10.3168,123.8931", "end": "10.2974,123.9015"},
-    {"name": "Banilad to Talamban", "start": "10.3404,123.9103", "end": "10.3550,123.9130"},
-    {"name": "SRP (South Road Properties)", "start": "10.2797,123.8804", "end": "10.2520,123.8640"}
+    {"name": "SRP (South Road Properties)", "start": "10.2797,123.8804", "end": "10.2520,123.8640"},
+    {"name": "Mabolo to Ayala via MJ Cuenco", "start": "10.3230,123.9150", "end": "10.3175,123.9066"},
+
+    # --- NORTHERN COMMUTER FLOWS ---
+    {"name": "Pit-os to Talamban (North Hub)", "start": "10.3952,123.9218", "end": "10.3700,123.9150"},
+    {"name": "Apas (Camp Lapu-Lapu) to IT Park", "start": "10.3400,123.9080", "end": "10.3296,123.9056"},
+    {"name": "Lahug to Plaza Housing", "start": "10.3340,123.8980", "end": "10.3540,123.8910"},
+
+    # --- SOUTHERN COMMUTER FLOWS ---
+    {"name": "Bulacao to Pardo Proper", "start": "10.2715,123.8565", "end": "10.2880,123.8650"},
+    {"name": "Inayawan to Colon (South Link)", "start": "10.2701,123.8563", "end": "10.2965,123.9017"},
+    {"name": "Labangon to Ayala (Route 12L)", "start": "10.3023,123.8821", "end": "10.3175,123.9066"},
+    {"name": "Guadalupe to Capitol (Route 06)", "start": "10.3210,123.8710", "end": "10.3168,123.8931"},
+    {"name": "Banawa to Jones Avenue", "start": "10.3110,123.8800", "end": "10.3100,123.8950"},
+
+    # --- DOWNTOWN & PORT CONVERGENCE ---
+    {"name": "Pier 1 to Colon (Port Area)", "start": "10.2925,123.9089", "end": "10.2965,123.9017"},
+    {"name": "Magallanes to Cebu Cathedral", "start": "10.2940,123.9020", "end": "10.2955,123.9050"},
+    {"name": "Colon to SM Seaside (MYBus Link)", "start": "10.2965,123.9017", "end": "10.2818,123.8837"},
+
+    # --- MACTAN-MANDAUE INTERCONNECTS ---
+    {"name": "Mactan Bridge (Mandaue Side)", "start": "10.3239,123.9372", "end": "10.3117,123.9784"},
+    {"name": "Parkmall to MEPZ 1", "start": "10.3255,123.9340", "end": "10.3160,123.9650"},
+    {"name": "Tamiya (MEPZ 2) to Cordova", "start": "10.3010,123.9450", "end": "10.2506,123.9493"},
+    {"name": "Airport to SM City Cebu", "start": "10.3075,123.9800", "end": "10.3111,123.9181"},
+    {"name": "Mandaue Public Market to Banilad", "start": "10.3283,123.9416", "end": "10.3395,123.9110"}
 ]
+
 
 def get_next_weekday(startdate, weekday):
     """Finds the date of the next specific weekday (0=Mon, 6=Sun)"""
