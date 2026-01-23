@@ -1,7 +1,9 @@
 import { useState } from 'react';
-// 👇 CHANGE THIS LINE (Use only one "../")
 import { supabase } from '../lib/supabase'; 
-import { Loader2, CheckCircle, Clock, Server } from 'lucide-react';
+import { Loader2, CheckCircle, Clock, Server, AlertCircle } from 'lucide-react';
+
+// Ensure this URL is exactly as shown in Render
+const BASE_URL = "https://verity-ai.onrender.com";
 
 export const SmartUpdateBtn = () => {
     const [status, setStatus] = useState('idle'); 
@@ -9,46 +11,65 @@ export const SmartUpdateBtn = () => {
 
     const handleUpdate = async () => {
         setStatus('queuing');
+        console.log("Requesting update from:", `${BASE_URL}/queue-update`);
+
         try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return alert("Please log in.");
+            if (!user) {
+                setStatus('idle');
+                return alert("Please log in.");
+            }
 
-            // 1. Get Ticket
-            const res = await fetch('https://verity-ai.onrender.com/queue-update', {
+            const res = await fetch(`${BASE_URL}/queue-update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: user.id })
             });
+
+            if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+
             const ticket = await res.json();
             
+            if (!ticket.job_id) throw new Error("No job ID received");
+
             setMeta({ position: ticket.position, wait: ticket.estimated_wait });
             pollStatus(ticket.job_id);
 
         } catch (e) {
-            console.error(e);
+            console.error("Queue Failed:", e);
             setStatus('error');
             setTimeout(() => setStatus('idle'), 3000);
         }
     };
 
     const pollStatus = (jobId) => {
+        if (!jobId || jobId === "undefined") return;
+
         const interval = setInterval(async () => {
             try {
-                const res = await fetch(`https://verity-ai.onrender.com/queue-status/${jobId}`);
+                const res = await fetch(`${BASE_URL}/queue-status/${jobId}`);
+                if (!res.ok) return;
+
                 const data = await res.json();
 
                 if (data.status === 'processing') setStatus('processing');
+                
                 if (data.status === 'completed') {
                     clearInterval(interval);
                     setStatus('success');
                     setTimeout(() => setStatus('idle'), 4000);
                 }
+                
                 if (data.status === 'failed') {
                     clearInterval(interval);
                     setStatus('error');
+                    setTimeout(() => setStatus('idle'), 3000);
                 }
-            } catch { clearInterval(interval); }
-        }, 1000);
+            } catch (err) { 
+                console.error("Polling error:", err);
+                clearInterval(interval); 
+            }
+        }, 2000);
     };
 
     return (
@@ -65,6 +86,7 @@ export const SmartUpdateBtn = () => {
             `}
         >
             {status === 'idle' && <><Server size={14}/> Train AI</>}
+            {status === 'error' && <><AlertCircle size={14}/> Offline</>}
             
             {status === 'queuing' && (
                 <>
@@ -82,7 +104,6 @@ export const SmartUpdateBtn = () => {
 
             {status === 'success' && <><CheckCircle size={14}/> Live!</>}
             
-            {/* Progress Bar */}
             {(status === 'queuing' || status === 'processing') && (
                 <div className="absolute bottom-0 left-0 h-0.5 bg-current opacity-30 transition-all duration-1000" 
                      style={{ width: status === 'processing' ? '100%' : '30%' }} />

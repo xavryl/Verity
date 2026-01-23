@@ -26,6 +26,7 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 TOMTOM_KEY = os.environ.get("TOMTOM_KEY") 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Shared memory for background tasks
 JOB_QUEUE = asyncio.Queue()
 JOB_STATUS = {}
 
@@ -135,6 +136,7 @@ async def traffic_spy_worker():
 # --- 4. LIFESTYLE BACKGROUND WORKER ---
 
 async def queue_worker():
+    """Processes property training jobs from the queue"""
     print("👷 [Worker] Online. Waiting for jobs...")
     while True:
         job = await JOB_QUEUE.get()
@@ -153,6 +155,7 @@ async def queue_worker():
                 save_backup_to_cloud('properties.pkl', PROPERTY_BRAIN)
             JOB_STATUS[job_id] = "completed"
         except Exception as e:
+            print(f"❌ [Worker] Job {job_id} failed: {e}")
             JOB_STATUS[job_id] = "failed"
         finally:
             JOB_QUEUE.task_done()
@@ -188,6 +191,7 @@ async def lifespan(app: FastAPI):
     else:
         train_traffic_model()
 
+    # Start Workers
     asyncio.create_task(queue_worker())
     asyncio.create_task(traffic_spy_worker())
     yield
@@ -199,6 +203,26 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
 
 # --- 6. ENDPOINTS ---
 
+class QueueRequest(BaseModel):
+    user_id: str
+
+@app.post("/queue-update")
+async def queue_update(req: QueueRequest):
+    """Adds a job to the queue for the Smart Update button"""
+    job_id = str(uuid.uuid4())
+    await JOB_QUEUE.put({"job_id": job_id, "user_id": req.user_id})
+    return {
+        "job_id": job_id, 
+        "position": JOB_QUEUE.qsize(), 
+        "estimated_wait": JOB_QUEUE.qsize() * 5
+    }
+
+@app.get("/queue-status/{job_id}")
+def check_status(job_id: str):
+    """Checks the status of a specific job ID"""
+    status = JOB_STATUS.get(job_id, "queuing")
+    return {"status": status}
+
 @app.post("/train-traffic")
 def train_traffic():
     train_traffic_model()
@@ -209,20 +233,20 @@ class TrafficRequest(BaseModel):
     start_lng: float
     end_lat: float
     end_lng: float
-    time_context: float = -1.0 # Default value makes this optional
+    time_context: float = -1.0 
 
 @app.post("/predict-traffic")
 def predict_traffic(req: TrafficRequest):
     """Predicts travel time and color using the AI brain."""
     dist_km = geodesic((req.start_lat, req.start_lng), (req.end_lat, req.end_lng)).km
-    base_minutes = (dist_km / 30) * 60 # Assume 30km/h average city speed
+    base_minutes = (dist_km / 30) * 60 
     congestion = 1.0
     
     if TRAFFIC_MODEL:
         target_day = datetime.datetime.now().weekday()
         target_hour = datetime.datetime.now().hour if req.time_context == -1 else req.time_context
         
-        # Use a DataFrame with column names to avoid UserWarnings
+        # Wrapped in DataFrame to match trained feature names
         input_df = pd.DataFrame([[target_day, target_hour]], columns=['day_of_week', 'hour_of_day'])
         congestion = TRAFFIC_MODEL.predict(input_df)[0]
     
