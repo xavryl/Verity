@@ -176,20 +176,17 @@ export const VerityMap = ({ customProperties = null }) => {
     const [selectedAmenity, setSelectedAmenity] = useState(null);
     const [hoveredAmenityId, setHoveredAmenityId] = useState(null);
 
-    // [NEW] Filters & State
     const [listingType, setListingType] = useState('all'); 
     const [isInquiryOpen, setIsInquiryOpen] = useState(false);
     const [selectedLotForInquiry, setSelectedLotForInquiry] = useState(null);
     const [currentMapId, setCurrentMapId] = useState(null);
     
-    // [NEW] Connectivity Toggle State
     const [showSignal, setShowSignal] = useState(false);
 
     const [routeData, setRouteData] = useState(null);
     const [filteredIds, setFilteredIds] = useState(null);
     const [preciseData, setPreciseData] = useState({});
 
-    // Inject CSS
     useEffect(() => {
         const style = document.createElement('style');
         style.innerHTML = ANIMATION_STYLE;
@@ -219,7 +216,6 @@ export const VerityMap = ({ customProperties = null }) => {
         loadConfig();
     }, []);
 
-    // [UPDATED] Load Data Logic with Project Filter
     useEffect(() => {
         const loadData = async () => {
             if (customProperties) {
@@ -231,10 +227,9 @@ export const VerityMap = ({ customProperties = null }) => {
             const mapId = params.get('map_id'); 
             const publicKey = params.get('k');  
 
-            setCurrentMapId(mapId); // For LotLayer
+            setCurrentMapId(mapId); 
 
             if (mapId) {
-                // STRATEGY A: Specific Map ID (Project View)
                 const { data: props } = await supabase
                     .from('properties')
                     .select('*')
@@ -246,7 +241,6 @@ export const VerityMap = ({ customProperties = null }) => {
                 if (amens) setAmenities(amens);
 
             } else if (publicKey) {
-                // STRATEGY B: Public Profile (Legacy)
                 const { data: profile } = await supabase.from('profiles').select('id').eq('public_key', publicKey).single();
                 if (profile) {
                     const { data: props } = await supabase.from('properties').select('*').eq('user_id', profile.id);
@@ -255,7 +249,6 @@ export const VerityMap = ({ customProperties = null }) => {
                     if (amens) setAmenities(amens);
                 }
             } else {
-                // STRATEGY C: Dev Mode
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
                     const { data: props } = await supabase.from('properties').select('*').eq('user_id', user.id);
@@ -344,7 +337,6 @@ export const VerityMap = ({ customProperties = null }) => {
         return filtered;
     }, [properties, filteredIds, selectedProp, listingType]);
 
-    // Background Fetch
     useEffect(() => {
         if (!selectedProp || !visibleAmenities.length) {
             return;
@@ -366,7 +358,6 @@ export const VerityMap = ({ customProperties = null }) => {
         }
     }, [visibleAmenities, preciseData, selectedProp]);
 
-    // Handlers
     const handlePropSelect = (prop) => {
         setSelectedProp(prop); 
         setPreciseData({}); 
@@ -471,11 +462,7 @@ export const VerityMap = ({ customProperties = null }) => {
 
     return (
         <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
-            
-            {/* TOGGLE BAR (Category + Signal) */}
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] flex gap-2 animate-in fade-in slide-in-from-top-4">
-                
-                {/* 1. Category Switcher */}
                 <div className="bg-white/90 backdrop-blur-sm p-1 rounded-full shadow-lg border border-gray-200 flex gap-1">
                     {['all', 'residential', 'commercial'].map((type) => (
                         <button
@@ -492,7 +479,6 @@ export const VerityMap = ({ customProperties = null }) => {
                     ))}
                 </div>
 
-                {/* 2. Signal Toggle [NEW] */}
                 <button
                     onClick={() => setShowSignal(!showSignal)}
                     className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1 shadow-lg ${
@@ -503,18 +489,13 @@ export const VerityMap = ({ customProperties = null }) => {
                 >
                     <Wifi size={12} /> Signal
                 </button>
-
             </div>
             
             <MapContainer center={[10.3157, 123.8854]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
                 <TileLayer attribution='&copy; CARTO' url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png" />
                 <MapInvalidator />
                 <MapController selectedProperty={selectedProp} />
-
-                {/* [NEW] LOT LAYER */}
                 <LotLayer onInquire={handleLotInquire} mapId={currentMapId} />
-
-                {/* [NEW] CONNECTIVITY LAYER */}
                 {showSignal && <ConnectivityLayer />}
 
                 {routeData && (
@@ -579,7 +560,6 @@ export const VerityMap = ({ customProperties = null }) => {
                 onSubTypeSelect={setSubTypeFilter} 
             />
 
-            {/* [NEW] INQUIRY MODAL */}
             {isInquiryOpen && (
                 <InquiryModal 
                     isOpen={isInquiryOpen}
