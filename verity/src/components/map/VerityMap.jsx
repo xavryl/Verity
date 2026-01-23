@@ -19,8 +19,10 @@ const ANIMATION_STYLE = `
     to { stroke-dashoffset: -30; }
   }
   .marching-ants {
-    animation: dash-animation 1s linear infinite;
-    stroke-dasharray: 10, 20; 
+    animation: dash-animation 1s linear infinite !important;
+    stroke-dasharray: 10, 20 !important;
+    stroke: #3b82f6 !important;
+    stroke-width: 5px !important;
   }
   .leaflet-marker-icon {
     transition: width 0.2s, height 0.2s, margin-top 0.2s, margin-left 0.2s;
@@ -150,11 +152,13 @@ const MapController = ({ selectedProperty }) => {
 };
 
 const fetchRoute = async (start, end) => {
+    console.log("🔍 [Debug] Requesting Route:", start, "->", end);
     try {
         const url = `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
         const res = await fetch(url);
         const data = await res.json();
         if (data.routes && data.routes.length > 0) {
+            console.log("✅ [Debug] Route Path Data Received");
             const route = data.routes[0];
             const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
             const distKm = route.distance / 1000;
@@ -187,7 +191,9 @@ export const VerityMap = ({ customProperties = null }) => {
     const [filteredIds, setFilteredIds] = useState(null);
     const [preciseData, setPreciseData] = useState({});
 
+    // Inject CSS for Production Fix
     useEffect(() => {
+        console.log("🛠️ [Debug] Injecting CSS Animation Styles");
         const style = document.createElement('style');
         style.innerHTML = ANIMATION_STYLE;
         document.head.appendChild(style);
@@ -337,10 +343,9 @@ export const VerityMap = ({ customProperties = null }) => {
         return filtered;
     }, [properties, filteredIds, selectedProp, listingType]);
 
+    // Background calculation for route summaries
     useEffect(() => {
-        if (!selectedProp || !visibleAmenities.length) {
-            return;
-        }
+        if (!selectedProp || !visibleAmenities.length) return;
         const nextToFetch = visibleAmenities.find(a => !preciseData[a.id]);
         if (nextToFetch) {
             const timer = setTimeout(async () => {
@@ -359,6 +364,7 @@ export const VerityMap = ({ customProperties = null }) => {
     }, [visibleAmenities, preciseData, selectedProp]);
 
     const handlePropSelect = (prop) => {
+        console.log("🏠 [Debug] Selecting Property:", prop.name);
         setSelectedProp(prop); 
         setPreciseData({}); 
         setActiveFilter(null); 
@@ -369,6 +375,7 @@ export const VerityMap = ({ customProperties = null }) => {
 
     const handleAmenityClick = async (amenity) => {
         if (!selectedProp) return;
+        console.log("📍 [Debug] Selecting Amenity for Route:", amenity.name);
         setSelectedAmenity(amenity); 
         
         if (preciseData[amenity.id] && !preciseData[amenity.id].failed) {
@@ -498,15 +505,16 @@ export const VerityMap = ({ customProperties = null }) => {
                 <LotLayer onInquire={handleLotInquire} mapId={currentMapId} />
                 {showSignal && <ConnectivityLayer />}
 
+                {/* ANIMATED POLYLINE LAYER */}
                 {routeData && (
                     <Polyline 
-                        key={selectedAmenity?.id} 
+                        key={`route-line-${selectedAmenity?.id}-${routeData.path.length}`} 
                         positions={routeData.path} 
                         pathOptions={{ 
                             className: 'marching-ants',
                             color: '#3b82f6', 
                             weight: 5, 
-                            opacity: 0.8, 
+                            opacity: 0.9, 
                             lineCap: "round",
                             dashArray: '10, 20'
                         }} 
@@ -536,7 +544,6 @@ export const VerityMap = ({ customProperties = null }) => {
                 ) : (
                     renderMarkers()
                 )}
-
             </MapContainer>
 
             <LifestyleQuiz 
