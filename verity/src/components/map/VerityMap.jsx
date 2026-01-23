@@ -191,9 +191,7 @@ export const VerityMap = ({ customProperties = null }) => {
     const [filteredIds, setFilteredIds] = useState(null);
     const [preciseData, setPreciseData] = useState({});
 
-    // Inject CSS for Production Fix
     useEffect(() => {
-        console.log("🛠️ [Debug] Injecting CSS Animation Styles");
         const style = document.createElement('style');
         style.innerHTML = ANIMATION_STYLE;
         document.head.appendChild(style);
@@ -257,9 +255,9 @@ export const VerityMap = ({ customProperties = null }) => {
             } else {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                    const { data: props } = await supabase.from('properties').select('*').eq('user_id', user.id);
+                    const { data: props = [] } = await supabase.from('properties').select('*').eq('user_id', user.id);
                     if (props) setProperties(props);
-                    const { data: amens } = await supabase.from('amenities').select('*');
+                    const { data: amens = [] } = await supabase.from('amenities').select('*');
                     if (amens) setAmenities(amens);
                 }
             }
@@ -505,7 +503,7 @@ export const VerityMap = ({ customProperties = null }) => {
                 <LotLayer onInquire={handleLotInquire} mapId={currentMapId} />
                 {showSignal && <ConnectivityLayer />}
 
-                {/* ANIMATED POLYLINE LAYER */}
+                {/* ANIMATED POLYLINE LAYER - FORCED REDRAW KEY */}
                 {routeData && (
                     <Polyline 
                         key={`route-line-${selectedAmenity?.id}-${routeData.path.length}`} 
@@ -544,6 +542,7 @@ export const VerityMap = ({ customProperties = null }) => {
                 ) : (
                     renderMarkers()
                 )}
+
             </MapContainer>
 
             <LifestyleQuiz 
