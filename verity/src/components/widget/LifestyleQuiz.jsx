@@ -47,7 +47,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
         try {
             // CHANGE THIS URL to your local backend to test the fix!
             // If you deploy the new python code, change this back to 'https://verity-ai.onrender.com'
-            const API_URL = 'http://127.0.0.1:8000'; 
+            const API_URL = 'https://verity-ai.onrender.com'; 
             
             const response = await fetch(`${API_URL}/recommend`, {
                 method: 'POST',
