@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
     Sparkles, X, Dumbbell, Dog, GraduationCap, ShieldCheck, 
     ShoppingBag, BrainCircuit, ArrowRight, RotateCcw, Loader2, Quote, Check,
@@ -11,9 +11,9 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
     const [selectedTags, setSelectedTags] = useState([]); 
     const [matches, setMatches] = useState([]); 
     const [activeIndex, setActiveIndex] = useState(0);
-    // Added for smooth entry transition
     const [isTransitioning, setIsTransitioning] = useState(false);
 
+    // Profile Definitions
     const PROFILES = [
         { id: 'student', label: 'Student', icon: BookOpen, color: 'text-pink-600', bg: 'bg-pink-50' },
         { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-600', bg: 'bg-green-50' },
@@ -35,6 +35,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
         if (selectedTags.length === 0) return;
         setStep('loading');
 
+        // Logic Mapping: Ensure 'fitness' triggers 'lifestyle_priority'
         const payload = {
             personas: selectedTags, 
             safety_priority: (selectedTags.includes('safety') || selectedTags.includes('family')) ? 1.0 : 0.0,
@@ -44,7 +45,10 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
         };
 
         try {
-            const API_URL = 'https://verity-ai.onrender.com'; 
+            // CHANGE THIS URL to your local backend to test the fix!
+            // If you deploy the new python code, change this back to 'https://verity-ai.onrender.com'
+            const API_URL = 'http://127.0.0.1:8000'; 
+            
             const response = await fetch(`${API_URL}/recommend`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -54,6 +58,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
             if (!response.ok) throw new Error("AI Server Error");
             const data = await response.json();
             
+            // Enrich AI results with real property images/prices from your frontend list
             const enrichedMatches = data.matches.map(match => {
                 const realProp = properties.find(p => String(p.id) === String(match.id));
                 if (!realProp) return null;
@@ -72,18 +77,15 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
             }
         } catch (err) {
             console.error(err);
-            alert("AI is starting up. Try again in 10s.");
+            alert("Ensure your local backend (main.py) is running on port 8000.");
             setStep('quiz');
         }
     };
 
     const handleSelectMatch = (index) => {
-        // Trigger a brief transition state to prevent snapping
         setIsTransitioning(true);
         setActiveIndex(index);
         if (onRecommend) onRecommend(matches[index]);
-        
-        // Reset transition after CSS duration
         setTimeout(() => setIsTransitioning(false), 300);
     };
 
@@ -95,6 +97,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
 
     const activeMatch = matches[activeIndex];
 
+    // Minimized State (Button)
     if (!isOpen) {
         return (
             <button onClick={() => setIsOpen(true)} className="absolute top-4 right-4 z-[1000] bg-white text-gray-900 px-4 py-2.5 rounded-full shadow-xl font-bold text-xs flex items-center gap-2 hover:scale-105 transition-transform border border-gray-100">
@@ -103,9 +106,11 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
         );
     }
 
+    // Expanded State (Modal)
     return (
         <div className="absolute top-4 right-4 z-[1000] w-[340px] bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 overflow-hidden animate-in fade-in zoom-in duration-300 font-sans pointer-events-auto flex flex-col max-h-[85vh]">
             
+            {/* Header */}
             <div className="bg-gradient-to-r from-violet-700 to-indigo-700 p-4 text-white flex justify-between items-center shrink-0">
                 <div>
                     <h3 className="font-bold text-sm flex items-center gap-2">
@@ -117,6 +122,8 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
             </div>
 
             <div className="p-5 overflow-y-auto custom-scrollbar">
+                
+                {/* Step 1: The Quiz */}
                 {step === 'quiz' && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                         <h4 className="text-sm font-bold text-gray-800 mb-1">What fits your lifestyle?</h4>
@@ -144,6 +151,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
                     </div>
                 )}
 
+                {/* Step 2: Loading State */}
                 {step === 'loading' && (
                     <div className="py-12 text-center animate-pulse">
                         <Loader2 size={36} className="text-violet-600 animate-spin mx-auto mb-4" />
@@ -152,12 +160,13 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
                     </div>
                 )}
 
+                {/* Step 3: Results */}
                 {step === 'result' && activeMatch && (
                     <div className="flex flex-col gap-4">
                         
-                        {/* --- TOP SECTION: THE "ACTIVE" MATCH WITH SMOOTH CONTENT TRANSITION --- */}
+                        {/* Selected Match Card */}
                         <div 
-                            key={activeIndex} // Changing key forces a re-render with the 'animate-in' class
+                            key={activeIndex} 
                             className={`bg-violet-50 border border-violet-100 rounded-xl p-4 relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-2 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}
                         >
                             <Quote size={20} className="absolute -top-2 -left-2 text-violet-200 fill-violet-200 bg-white rounded-full p-0.5 border border-violet-100" />
@@ -173,7 +182,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
                             </div>
                         </div>
 
-                        {/* --- MIDDLE SECTION: LIST OF MATCHES --- */}
+                        {/* List of Other Matches */}
                         <div className="animate-in fade-in duration-700 delay-150">
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Top {matches.length} Matches</p>
                             <div className="flex flex-col gap-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">

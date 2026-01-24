@@ -26,7 +26,7 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 TOMTOM_KEY = os.environ.get("TOMTOM_KEY") 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Shared memory for background tasks
+# Shared memory
 JOB_QUEUE = asyncio.Queue()
 JOB_STATUS = {}
 
@@ -35,25 +35,22 @@ AMENITY_BRAIN = None
 PROPERTY_BRAIN = pd.DataFrame()
 TRAFFIC_MODEL = None 
 
-# --- UPDATED CATEGORIES MAPPING ---
+# --- CATEGORIES ---
 CATEGORIES = {
-    'safety': [
-        'police', 'fire station', 'barangay hall', 'station', 'outpost'
-    ],
-    'health': [
-        'hospital', 'clinic', 'pharmacy', 'drugstore', 'dental', 'diagnostic', 
-        'laboratory', 'bloodbank', 'vet', 'medical' 
-    ],
-    'education': [
-        'school', 'college', 'university', 'k-12', 'library', 'education', 'academy'
-    ],
-    'lifestyle': [
-        'gym', 'fitness', 'crossfit', 'yoga', 
-        'mall', 'supermarket', 'market', 'public market', 'convenience store', 
-        'grocery', 'restaurant', 'cafe', 'bank', 'atm', 'hardware', 
-        'laundry', 'laundryshop', 'water refilling', 'gas station', 
-        'church', 'chapel'
-    ]
+    'safety': ['police', 'fire station', 'barangay hall', 'station', 'outpost'],
+    'health': ['hospital', 'clinic', 'pharmacy', 'drugstore', 'dental', 'diagnostic', 'laboratory', 'bloodbank', 'vet', 'medical'],
+    'education': ['school', 'college', 'university', 'k-12', 'library', 'education', 'academy'],
+    'lifestyle': ['gym', 'fitness', 'crossfit', 'yoga', 'mall', 'supermarket', 'market', 'public market', 'convenience store', 'grocery', 'restaurant', 'cafe', 'bank', 'atm', 'hardware', 'laundry', 'laundryshop', 'water refilling', 'gas station', 'church', 'chapel']
+}
+
+# --- SMART MAPPING: Specific keywords to boost for specific personas ---
+PERSONA_BOOSTS = {
+    'fitness': ['gym', 'fitness', 'crossfit', 'yoga', 'sports'],
+    'pets': ['vet', 'animal', 'pet'],
+    'student': ['university', 'college', 'library'],
+    'family': ['school', 'k-12', 'park'],
+    'safety': ['police', 'barangay'],
+    'convenience': ['mall', 'supermarket', 'grocery']
 }
 
 grammar_source = {
@@ -63,33 +60,23 @@ grammar_source = {
     "default_body": "Ideally situated with {name} #distance_adj#."
 }
 
-# --- UPDATED TRAFFIC SENSORS (Comprehensive Cebu Arteries) ---
 REFERENCE_ROUTES = [
-    # --- PRIMARY BUSINESS ARTERIES ---
     {"name": "IT Park to Ayala", "start": "10.3296,123.9056", "end": "10.3175,123.9066"},
     {"name": "Banilad to Talamban Tintay", "start": "10.3404,123.9103", "end": "10.3700,123.9150"},
-    {"name": "Osmena Blvd (Capitol to Colon)", "start": "10.3168,123.8931", "end": "10.2974,123.9015"},
+    {"name": "Osmena Blvd", "start": "10.3168,123.8931", "end": "10.2974,123.9015"},
     {"name": "SRP (South Road Properties)", "start": "10.2797,123.8804", "end": "10.2520,123.8640"},
     {"name": "Mabolo to Ayala via MJ Cuenco", "start": "10.3230,123.9150", "end": "10.3175,123.9066"},
-
-    # --- NORTHERN COMMUTER FLOWS ---
     {"name": "Pit-os to Talamban (North Hub)", "start": "10.3952,123.9218", "end": "10.3700,123.9150"},
     {"name": "Apas (Camp Lapu-Lapu) to IT Park", "start": "10.3400,123.9080", "end": "10.3296,123.9056"},
     {"name": "Lahug to Plaza Housing", "start": "10.3340,123.8980", "end": "10.3540,123.8910"},
-
-    # --- SOUTHERN COMMUTER FLOWS ---
     {"name": "Bulacao to Pardo Proper", "start": "10.2715,123.8565", "end": "10.2880,123.8650"},
     {"name": "Inayawan to Colon (South Link)", "start": "10.2701,123.8563", "end": "10.2965,123.9017"},
     {"name": "Labangon to Ayala (Route 12L)", "start": "10.3023,123.8821", "end": "10.3175,123.9066"},
     {"name": "Guadalupe to Capitol (Route 06)", "start": "10.3210,123.8710", "end": "10.3168,123.8931"},
     {"name": "Banawa to Jones Avenue", "start": "10.3110,123.8800", "end": "10.3100,123.8950"},
-
-    # --- DOWNTOWN & PORT CONVERGENCE ---
     {"name": "Pier 1 to Colon (Port Area)", "start": "10.2925,123.9089", "end": "10.2965,123.9017"},
     {"name": "Magallanes to Cebu Cathedral", "start": "10.2940,123.9020", "end": "10.2955,123.9050"},
     {"name": "Colon to SM Seaside (MYBus Link)", "start": "10.2965,123.9017", "end": "10.2818,123.8837"},
-
-    # --- MACTAN-MANDAUE INTERCONNECTS ---
     {"name": "Mactan Bridge (Mandaue Side)", "start": "10.3239,123.9372", "end": "10.3117,123.9784"},
     {"name": "Parkmall to MEPZ 1", "start": "10.3255,123.9340", "end": "10.3160,123.9650"},
     {"name": "Tamiya (MEPZ 2) to Cordova", "start": "10.3010,123.9450", "end": "10.2506,123.9493"},
@@ -97,60 +84,48 @@ REFERENCE_ROUTES = [
     {"name": "Mandaue Public Market to Banilad", "start": "10.3283,123.9416", "end": "10.3395,123.9110"}
 ]
 
-# --- 2. CLOUD BACKUP & SNAPSHOTS ---
-
+# --- 2. BACKUP & CLOUD UTILS ---
 def save_backup_to_cloud(filename, data):
-    """Saves to disk and syncs to Supabase Storage."""
     try:
         joblib.dump(data, filename)
         with open(filename, 'rb') as f:
             supabase.storage.from_('ai_models').upload(
-                path=filename, 
-                file=f, 
-                file_options={"cache-control": "3600", "upsert": "true"}
+                path=filename, file=f, file_options={"cache-control": "3600", "upsert": "true"}
             )
-        print(f"☁️ [Backup] Uploaded {filename} to Supabase.")
+        print(f"☁️ [Backup] Uploaded {filename}.")
     except Exception as e:
         print(f"⚠️ [Backup] Upload Failed: {e}")
 
 def load_backup_from_cloud(filename):
-    """Retrieves trained models from cloud if local is missing."""
     try:
         print(f"☁️ [Backup] Downloading {filename}...")
         data = supabase.storage.from_('ai_models').download(filename)
-        with open(filename, 'wb') as f:
-            f.write(data)
+        with open(filename, 'wb') as f: f.write(data)
         return joblib.load(filename)
     except Exception as e:
         print(f"❌ [Backup] Cloud Download Failed: {e}")
         return None
 
-# --- 3. TRAFFIC AI ENGINE ---
-
+# --- 3. TRAFFIC ENGINE ---
 def train_traffic_model():
-    """Converts traffic_logs into a RandomForest brain."""
     global TRAFFIC_MODEL
     try:
         resp = supabase.table('traffic_logs').select("day_of_week, hour_of_day, congestion_factor").execute()
         df = pd.DataFrame(resp.data)
-        
         if not df.empty:
             X = df[['day_of_week', 'hour_of_day']]
             y = df['congestion_factor']
-            
             model = RandomForestRegressor(n_estimators=50, random_state=42)
             model.fit(X, y)
-            
             TRAFFIC_MODEL = model
             save_backup_to_cloud('traffic_ai.pkl', model)
-            print("✅ [Traffic AI] Retrained & Saved.")
+            print("✅ [Traffic AI] Retrained.")
         else:
-            print("❌ [Traffic AI] Training failed: Table is empty.")
+            print("❌ [Traffic AI] No data to train.")
     except Exception as e:
         print(f"❌ [Traffic AI] Error: {e}")
 
 async def traffic_spy_worker():
-    """Sips TomTom data every 30 mins to update historical patterns."""
     print("🕵️ [Traffic Spy] Online.")
     while True:
         try:
@@ -169,22 +144,14 @@ async def traffic_spy_worker():
                         "current_duration": summary['travelTimeInSeconds'],
                         "congestion_factor": factor
                     }).execute()
-                # Rate Limiting: Sleep 0.2s between calls to avoid API throttling
                 await asyncio.sleep(0.2)
-            
-            # Retrain immediately after collecting new data
             train_traffic_model()
         except Exception as e:
             print(f"⚠️ [Traffic Spy] Error: {e}")
-        
-        # Wait 30 minutes before next batch
         await asyncio.sleep(1800)
 
-# --- 4. LIFESTYLE BACKGROUND WORKER ---
-
 async def queue_worker():
-    """Processes property training jobs from the queue"""
-    print("👷 [Worker] Online. Waiting for jobs...")
+    print("👷 [Worker] Online.")
     while True:
         job = await JOB_QUEUE.get()
         job_id, user_id = job['job_id'], job['user_id']
@@ -201,80 +168,60 @@ async def queue_worker():
                 PROPERTY_BRAIN = new_brain
                 save_backup_to_cloud('properties.pkl', PROPERTY_BRAIN)
             JOB_STATUS[job_id] = "completed"
-        except Exception as e:
-            print(f"❌ [Worker] Job {job_id} failed: {e}")
+        except:
             JOB_STATUS[job_id] = "failed"
         finally:
             JOB_QUEUE.task_done()
 
-# --- 5. SERVER LIFESPAN (Startup/Shutdown) ---
-
+# --- LIFESPAN ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global AMENITY_BRAIN, PROPERTY_BRAIN, TRAFFIC_MODEL
     print("🚀 Server starting up...")
-
-    # Load Lifestyle Data
-    if os.path.exists('amenities.pkl'):
-        AMENITY_BRAIN = joblib.load('amenities.pkl')
+    
+    if os.path.exists('amenities.pkl'): AMENITY_BRAIN = joblib.load('amenities.pkl')
     else:
-        cloud_amenities = load_backup_from_cloud('amenities.pkl')
-        if cloud_amenities: AMENITY_BRAIN = cloud_amenities
+        cloud = load_backup_from_cloud('amenities.pkl')
+        if cloud: AMENITY_BRAIN = cloud
 
     try:
         resp = supabase.table('properties').select("*").execute()
         PROPERTY_BRAIN = pd.DataFrame(resp.data)
         save_backup_to_cloud('properties.pkl', PROPERTY_BRAIN)
     except:
-        cloud_props = load_backup_from_cloud('properties.pkl')
-        if cloud_props is not None: PROPERTY_BRAIN = cloud_props
+        cloud = load_backup_from_cloud('properties.pkl')
+        if cloud is not None: PROPERTY_BRAIN = cloud
 
-    # Load Traffic Brain
-    print("🚦 [Traffic AI] Loading...")
     cloud_traffic = load_backup_from_cloud('traffic_ai.pkl')
-    if cloud_traffic:
-        TRAFFIC_MODEL = cloud_traffic
-        print("✅ [Traffic AI] Loaded from Backup.")
-    else:
-        print("⚠️ [Traffic AI] No backup found. Attempting to train...")
-        train_traffic_model()
+    if cloud_traffic: TRAFFIC_MODEL = cloud_traffic
+    else: train_traffic_model()
 
-    # Start Workers
     asyncio.create_task(queue_worker())
     asyncio.create_task(traffic_spy_worker())
     yield
 
 app = FastAPI(lifespan=lifespan)
-
 origins = ["http://localhost:5173", "https://verityph.space", "https://www.verityph.space"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# --- 6. ENDPOINTS ---
-
+# --- ENDPOINTS ---
 class QueueRequest(BaseModel):
     user_id: str
 
 @app.post("/queue-update")
 async def queue_update(req: QueueRequest):
-    """Adds a job to the queue for the Smart Update button"""
     job_id = str(uuid.uuid4())
     await JOB_QUEUE.put({"job_id": job_id, "user_id": req.user_id})
-    return {
-        "job_id": job_id, 
-        "position": JOB_QUEUE.qsize(), 
-        "estimated_wait": JOB_QUEUE.qsize() * 5
-    }
+    return {"job_id": job_id, "position": JOB_QUEUE.qsize()}
 
 @app.get("/queue-status/{job_id}")
 def check_status(job_id: str):
-    """Checks the status of a specific job ID"""
-    status = JOB_STATUS.get(job_id, "queuing")
-    return {"status": status}
+    return {"status": JOB_STATUS.get(job_id, "queuing")}
 
 @app.post("/train-traffic")
 def train_traffic():
     train_traffic_model()
-    return {"status": "Traffic AI Retrained"}
+    return {"status": "Retrained"}
 
 class TrafficRequest(BaseModel):
     start_lat: float
@@ -285,36 +232,23 @@ class TrafficRequest(BaseModel):
 
 @app.post("/predict-traffic")
 def predict_traffic(req: TrafficRequest):
-    """Predicts travel time and color using the AI brain."""
     dist_km = geodesic((req.start_lat, req.start_lng), (req.end_lat, req.end_lng)).km
     base_minutes = (dist_km / 30) * 60 
     congestion = 1.0
-    
-    # Ensure model is ready
     global TRAFFIC_MODEL
-    if TRAFFIC_MODEL is None:
-        train_traffic_model()
-
+    if TRAFFIC_MODEL is None: train_traffic_model()
     if TRAFFIC_MODEL:
         target_day = datetime.datetime.now().weekday()
         target_hour = datetime.datetime.now().hour if req.time_context == -1 else req.time_context
-        
-        # Wrapped in DataFrame to match trained feature names
-        input_df = pd.DataFrame([[target_day, target_hour]], columns=['day_of_week', 'hour_of_day'])
-        congestion = TRAFFIC_MODEL.predict(input_df)[0]
+        congestion = TRAFFIC_MODEL.predict(pd.DataFrame([[target_day, target_hour]], columns=['day_of_week', 'hour_of_day']))[0]
     
     predicted_minutes = base_minutes * congestion
     color = "#10b981"
     if congestion > 1.3: color = "#f59e0b"
     if congestion > 1.8: color = "#ef4444"
+    return {"distance_km": round(dist_km, 1), "predicted_minutes": int(predicted_minutes), "color": color, "is_ai": (TRAFFIC_MODEL is not None)}
 
-    return {
-        "distance_km": round(dist_km, 1),
-        "predicted_minutes": int(predicted_minutes),
-        "delay_minutes": int(max(0, predicted_minutes - base_minutes)),
-        "color": color,
-        "is_ai": (TRAFFIC_MODEL is not None)
-    }
+# --- INTELLIGENT MATCHING LOGIC ---
 
 class UserPreference(BaseModel):
     personas: list[str]
@@ -327,14 +261,18 @@ class UserPreference(BaseModel):
 def recommend(pref: UserPreference):
     if PROPERTY_BRAIN.empty: return {"matches": []}
     results = []
+    
+    # Pass user personas to the scoring function so it knows what to prioritize
     for _, row in PROPERTY_BRAIN.iterrows():
-        scores, metadata = score_property(row['lat'], row['lng'])
+        scores, metadata = score_property(row['lat'], row['lng'], pref.personas)
+        
         total = (
             (pref.safety_priority * scores.get('safety', 0)) +
             (pref.health_priority * scores.get('health', 0)) +
             (pref.education_priority * scores.get('education', 0)) +
             (pref.lifestyle_priority * scores.get('lifestyle', 0))
         )
+        
         if total > 0.1:
             headline, body = generate_copy(pref.personas, metadata)
             results.append({
@@ -345,37 +283,93 @@ def recommend(pref: UserPreference):
                 "body": body,
                 "highlights": [f"{v['type']} ({v['dist']}km)" for k,v in metadata.items()][:3]
             })
+            
     results.sort(key=lambda x: x['match_score'], reverse=True)
     return {"matches": results[:10], "matched_ids": [r['id'] for r in results[:10]]}
 
-def score_property(prop_lat, prop_lng):
+def score_property(prop_lat, prop_lng, personas=[]):
+    """
+    Intelligent Scoring:
+    Calculates score based on distance, BUT gives huge bonus if the amenity 
+    matches the specific needs of the user's persona (e.g. 'Gym' for 'Fitness').
+    """
     if not AMENITY_BRAIN: return {}, {}
-    radius_rad = 2.0 / 6371.0
+    radius_rad = 3.0 / 6371.0 # Search within 3km
     indices = AMENITY_BRAIN["tree"].query_radius([[np.radians(prop_lat), np.radians(prop_lng)]], r=radius_rad)[0]
+    
     if len(indices) == 0: return {}, {}
     nearby = AMENITY_BRAIN["data"].iloc[indices]
+    
     scores = {cat: 0.0 for cat in CATEGORIES.keys()}
     metadata = {}
+    
     for _, amen in nearby.iterrows():
         dist_km = geodesic((prop_lat, prop_lng), (amen['lat'], amen['lng'])).km
-        impact = 1 / (dist_km + 0.5)
-        text = str(amen['sub_category'] or amen['type'] or amen['name']).lower()
+        
+        # Base Impact Score (Closer = Higher)
+        impact = 1 / (dist_km + 0.5) 
+        
+        raw_text = str(amen['sub_category'] or amen['type'] or amen['name']).lower()
+        
+        # 1. CATEGORIZE THE AMENITY
+        found_category = None
         for cat, keywords in CATEGORIES.items():
-            if any(k in text for k in keywords):
-                scores[cat] += impact
-                if cat not in metadata or dist_km < metadata[cat]['dist']:
-                    metadata[cat] = {'name': amen['name'], 'type': amen['sub_category'], 'dist': round(dist_km, 2)}
+            if any(k in raw_text for k in keywords):
+                found_category = cat
+                break
+        
+        if found_category:
+            # 2. APPLY PERSONA BOOST
+            # If user wants "Fitness" and this is a "Gym", multiply score by 3x
+            # and mark it as a priority match.
+            is_priority_match = False
+            for p in personas:
+                if p in PERSONA_BOOSTS and any(boost in raw_text for boost in PERSONA_BOOSTS[p]):
+                    impact *= 3.0 # HUGE BONUS
+                    is_priority_match = True
+            
+            scores[found_category] += impact
+
+            # 3. METADATA UPDATE LOGIC
+            # If we don't have metadata yet, OR if this is closer, OR if this is a Priority Match (and the previous wasn't)
+            current_meta = metadata.get(found_category)
+            
+            should_update = False
+            if not current_meta:
+                should_update = True
+            elif is_priority_match and not current_meta.get('priority'):
+                should_update = True # Overwrite generic item with specific match (e.g. Vet replaces Dentist)
+            elif is_priority_match == current_meta.get('priority', False) and dist_km < current_meta['dist']:
+                should_update = True # Both are same priority level, but this one is closer
+
+            if should_update:
+                metadata[found_category] = {
+                    'name': amen['name'], 
+                    'type': amen['sub_category'] or amen['type'], 
+                    'dist': round(dist_km, 2),
+                    'priority': is_priority_match
+                }
+
     return scores, metadata
 
 def generate_copy(personas, metadata):
     grammar = tracery.Grammar(grammar_source)
     grammar.add_modifiers(base_english)
-    target = 'lifestyle'
-    if 'student' in personas: target = 'education'
-    elif 'health' in personas: target = 'health'
+    
+    # Smart Copy Generation
+    # Pick the metadata category that matches the most important persona
+    target = 'lifestyle' # Default
+    if 'fitness' in personas and 'lifestyle' in metadata and metadata['lifestyle'].get('priority'): target = 'lifestyle'
+    elif 'pets' in personas and 'health' in metadata and metadata['health'].get('priority'): target = 'health'
+    elif 'student' in personas and 'education' in metadata: target = 'education'
+    elif 'family' in personas and 'education' in metadata: target = 'education'
+    elif 'safety' in personas and 'safety' in metadata: target = 'safety'
+    elif 'health' in personas and 'health' in metadata: target = 'health'
+
     if target in metadata:
         info = metadata[target]
         return f"Near {str(info['type']).title()}", grammar.flatten(f"Enjoy easy access to {info['name']} #distance_adj#.")
+    
     return "Great Location", "A perfectly connected home."
 
 @app.post("/train-amenities")
