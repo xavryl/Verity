@@ -35,11 +35,24 @@ AMENITY_BRAIN = None
 PROPERTY_BRAIN = pd.DataFrame()
 TRAFFIC_MODEL = None 
 
+# --- UPDATED CATEGORIES MAPPING ---
+# I have mapped your specific list into the 4 core pillars used by the scoring engine.
 CATEGORIES = {
-    'safety': ['police', 'fire', 'barangay', 'station'],
-    'health': ['hospital', 'clinic', 'pharmacy', 'vet'],
-    'education': ['school', 'college', 'university', 'campus'],
-    'lifestyle': ['gym', 'mall', 'market', 'park', 'cafe']
+    'safety': [
+        'police', 'fire station', 'barangay hall', 'station'
+    ],
+    'health': [
+        'hospital', 'clinic', 'pharmacy', 'drugstore', 'dental', 'diagnostic', 
+        'laboratory', 'bloodbank', 'vet', 'gym' 
+    ],
+    'education': [
+        'school', 'college', 'university', 'k-12', 'library', 'education'
+    ],
+    'lifestyle': [
+        'mall', 'supermarket', 'market', 'convenience store', 'grocery', 
+        'restaurant', 'cafe', 'bank', 'atm', 'hardware', 'laundry', 
+        'water refilling', 'gas station', 'church', 'chapel'
+    ]
 }
 
 grammar_source = {

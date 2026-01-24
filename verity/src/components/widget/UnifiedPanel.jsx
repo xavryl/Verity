@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { X, MapPin, ArrowRight, Shield, Heart, GraduationCap, Bus, ShoppingBag, Moon, Navigation, Layers } from 'lucide-react';
+import { X, MapPin, ArrowRight, Shield, Heart, GraduationCap, Bus, ShoppingBag, Moon, Layers, Activity } from 'lucide-react';
 
 // Configuration for essential categories and their display limits
 const PRIORITY_KEYS = {
@@ -11,8 +11,8 @@ const PRIORITY_KEYS = {
   'university': { label: 'College', limit: 3 }, 
   'college': { label: 'College', limit: 3 },    
   'school': { label: 'School', limit: 2 },     
-  'k-12 education': { label: 'School', limit: 2 }, // Explicit match for your database
-  'basic ed': { label: 'School', limit: 2 },   
+  'k-12': { label: 'School', limit: 2 }, 
+  'basic': { label: 'School', limit: 2 },   
   'market': { label: 'Public Market', limit: 1 }
 };
 
@@ -21,9 +21,7 @@ const getDistanceData = (lat1, lon1, lat2, lon2) => {
     const R = 6371; 
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a = 
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distKm = (R * c) * 1.3; 
     return { 
@@ -44,7 +42,8 @@ export const UnifiedPanel = ({
     selectedAmenity, 
     preciseData = {},
     subTypeFilter,
-    onSubTypeSelect
+    onSubTypeSelect,
+    onTrafficClick // [NEW] Prop to trigger traffic widget
 }) => {
   const isVisible = !!property;
   const [sheetState, setSheetState] = useState('peek');
@@ -88,7 +87,7 @@ export const UnifiedPanel = ({
     Object.entries(grouped).forEach(([label, items]) => {
         const limitConfig = Object.values(PRIORITY_KEYS).find(v => v.label === label);
         const limit = limitConfig ? limitConfig.limit : 1;
-        items.sort((a, b) => parseFloat(a.dist) - parseFloat(b.dist)).slice(0, limit).map((item, index) => {
+        items.sort((a, b) => parseFloat(a.dist) - parseFloat(b.dist)).slice(0, limit).forEach((item, index) => {
             finalEssentials.push({
                 ...item,
                 displayLabel: limit > 1 ? `${item.genericLabel} ${index + 1}` : item.genericLabel
@@ -160,6 +159,24 @@ export const UnifiedPanel = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            
+            {/* [NEW] Traffic History Button */}
+            <button 
+                onClick={onTrafficClick}
+                className="w-full flex items-center justify-between p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-800 hover:bg-emerald-100 transition-colors"
+            >
+                <div className="flex items-center gap-3">
+                    <div className="bg-emerald-200 p-2 rounded-lg">
+                        <Activity size={18} className="text-emerald-700" />
+                    </div>
+                    <div className="text-left">
+                        <span className="block text-xs font-bold uppercase tracking-wider">Traffic Insights</span>
+                        <span className="block text-[10px] opacity-80">View 24h congestion history</span>
+                    </div>
+                </div>
+                <ArrowRight size={16} />
+            </button>
+
             {activeFilter && filterBreakdown ? (
                 <div className="animate-in fade-in slide-in-from-bottom-2">
                     <h3 className="text-xs font-bold text-gray-900 uppercase mb-3 flex items-center gap-2"><Layers size={14} className="text-emerald-500"/> Nearby Categories</h3>
