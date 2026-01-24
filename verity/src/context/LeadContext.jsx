@@ -1,3 +1,4 @@
+// src/context/LeadContext.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext'; 
@@ -39,11 +40,12 @@ export const LeadProvider = ({ children }) => {
               date: new Date(item.created_at).toLocaleDateString(),
               msg: item.message || "No message provided",
               
-              // [FIX] Map Expanded Property Details
+              // Map Expanded Property Details
               prop: item.properties?.name || "General Inquiry",
               prop_price: item.properties?.price || "N/A",
               prop_location: item.properties?.location || "",
               prop_image: item.properties?.main_image || null,
+              property_id: item.property_id, // Important for linking back
               
               ...item 
           });
@@ -58,7 +60,7 @@ export const LeadProvider = ({ children }) => {
     let mounted = true;
 
     const fetchLeads = async () => {
-      // [FIX] Fetch MORE property details for the split-screen modal
+      // Fetch inquiries AND join with properties to get details
       const { data, error } = await supabase
         .from('inquiries')
         .select(`
@@ -77,6 +79,7 @@ export const LeadProvider = ({ children }) => {
 
     fetchLeads();
     
+    // Realtime Listener
     const subscription = supabase
       .channel('public:inquiries')
       .on('postgres_changes', { 
@@ -97,10 +100,9 @@ export const LeadProvider = ({ children }) => {
 
   // 2. MOVE LEAD
   const moveLead = async (leadId, sourceCol, destCol) => {
-    // If moving within same column, ignore (unless reordering, which we handle via DnD lib usually)
     if (sourceCol === destCol) return;
 
-    // Optimistic Update
+    // A. Optimistic UI Update
     const sourceClone = [...leads[sourceCol]];
     const destClone = [...leads[destCol]];
     
@@ -109,7 +111,6 @@ export const LeadProvider = ({ children }) => {
 
     const [movedLead] = sourceClone.splice(leadIndex, 1);
     
-    // Update local status immediately
     movedLead.status = destCol;
     destClone.unshift(movedLead); 
 
@@ -119,12 +120,25 @@ export const LeadProvider = ({ children }) => {
       [destCol]: destClone,
     });
 
+    // B. Database Update (Lead Status)
     const { error } = await supabase
         .from('inquiries')
         .update({ status: destCol })
         .eq('id', leadId);
 
     if (error) console.error("Failed to move lead:", error);
+
+    // C. [CRITICAL] IF CLOSED -> MARK PROPERTY AS SOLD
+    if (destCol === 'closed' && movedLead.property_id) {
+        console.log("Closing deal. Marking property as sold:", movedLead.property_id);
+        
+        const { error: propError } = await supabase
+            .from('properties')
+            .update({ status: 'sold' }) 
+            .eq('id', movedLead.property_id);
+
+        if (propError) console.error("Failed to update property status:", propError);
+    }
   };
 
   // 3. ADD LEAD
@@ -145,6 +159,26 @@ export const LeadProvider = ({ children }) => {
       if (error) console.error("Error adding lead:", error);
   };
 
+  // 4. [NEW] DELETE LEADS (Bulk Action Support)
+  const deleteLeads = async (leadIds) => {
+      if (!leadIds || leadIds.length === 0) return;
+
+      // Optimistic Update: Filter out deleted leads from all columns
+      const newLeadsState = { ...leads };
+      Object.keys(newLeadsState).forEach(status => {
+          newLeadsState[status] = newLeadsState[status].filter(l => !leadIds.includes(l.id));
+      });
+      setLeads(newLeadsState);
+
+      // Database Delete
+      const { error } = await supabase
+          .from('inquiries')
+          .delete()
+          .in('id', leadIds);
+
+      if (error) console.error("Error deleting leads:", error);
+  };
+
   const getActiveLead = () => {
       const allLeads = [...leads.new, ...leads.contacted, ...leads.viewing, ...leads.closed];
       return allLeads.find(l => l.id === activeLeadId);
@@ -155,6 +189,7 @@ export const LeadProvider = ({ children }) => {
         leads, 
         moveLead, 
         addLead, 
+        deleteLeads, // [NEW] Exposed for LeadsBoard
         activeLead: getActiveLead(),
         setActiveLeadId 
     }}>

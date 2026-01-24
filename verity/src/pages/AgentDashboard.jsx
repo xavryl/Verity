@@ -5,7 +5,7 @@ import {
     Map as MapIcon, Settings, Building2,
     CheckCircle2, 
     LogOut, UserCog, ExternalLink,
-    Map // [NEW] Added Map Icon for the button
+    Map
 } from 'lucide-react';
 
 import { useLeads } from '../context/LeadContext';
@@ -18,55 +18,96 @@ import { WidgetBuilder } from '../components/dashboard/WidgetBuilder';
 import { VerityMap } from '../components/map/VerityMap'; 
 import { ProjectsManager } from '../components/dashboard/ProjectsManager'; 
 
-import './AgentDashboard.css';
-
 // --- OVERVIEW PANEL ---
-const OverviewPanel = ({ profile }) => {
+const OverviewPanel = ({ profile, user }) => {
     const mapUrl = `${window.location.origin}/map${profile?.public_key ? `?k=${profile.public_key}` : ''}`;
     
     return (
-        <div className="h-full flex flex-col p-6 overflow-hidden">
-            <div className="flex justify-between items-end mb-6 shrink-0">
+        <div className="h-full flex flex-col p-8 overflow-hidden bg-slate-900/50">
+            <div className="flex justify-between items-end mb-8 shrink-0">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Map Preview</h1>
-                    <p className="text-gray-500 text-sm mt-1">This is exactly what your clients will see.</p>
+                    <h1 className="text-3xl font-black text-white tracking-tight">Mission Control</h1>
+                    <p className="text-slate-400 mt-2 font-medium">Live view of your active property portfolio.</p>
                 </div>
                 {profile?.public_key && (
-                    <a href={mapUrl} target="_blank" rel="noreferrer" className="px-4 py-2 bg-violet-50 text-violet-700 font-bold rounded-xl hover:bg-violet-100 flex items-center gap-2 transition border border-violet-100">
-                        <ExternalLink size={16} /> Open Full Screen
+                    <a href={mapUrl} target="_blank" rel="noreferrer" className="px-5 py-2.5 bg-slate-800 text-blue-400 font-bold rounded-xl shadow-lg flex items-center gap-2 transition border border-slate-700 hover:bg-slate-700">
+                        <ExternalLink size={18} /> Open Map
                     </a>
                 )}
             </div>
             
-            <div className="w-full h-[600px] bg-gray-900 rounded-2xl shadow-xl border border-gray-200 overflow-hidden relative group shrink-0">
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-black/70 backdrop-blur text-white px-4 py-1.5 rounded-full text-xs font-bold pointer-events-none opacity-0 group-hover:opacity-100 transition duration-500">
-                    Interact to test your map
+            {/* Map Container */}
+            <div className="w-full h-[600px] bg-slate-800 rounded-3xl shadow-2xl border border-slate-700 overflow-hidden relative group shrink-0 ring-4 ring-slate-800 transition-all duration-300">
+                <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] bg-slate-900/90 backdrop-blur-md text-white px-6 py-2 rounded-full text-sm font-bold pointer-events-none opacity-0 group-hover:opacity-100 transition duration-500 transform translate-y-[-10px] group-hover:translate-y-0 shadow-lg">
+                    Interactive Preview Mode
                 </div>
-                <VerityMap isEmbedded={true} />
+                <VerityMap 
+                    isEmbedded={true} 
+                    userId={user?.id}
+                    showOwnerData={true}
+                />
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mt-6 shrink-0">
-                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center"><MapIcon size={20}/></div>
-                    <div><p className="text-2xl font-bold">Live</p><p className="text-xs text-gray-400 font-bold uppercase">Status</p></div>
+            {/* Status Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8 shrink-0">
+                 {/* Card 1 */}
+                 <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-sm flex items-center gap-5 hover:shadow-md transition duration-300 hover:border-slate-600">
+                    <div className="w-14 h-14 bg-blue-900/30 text-blue-400 rounded-2xl flex items-center justify-center">
+                        <MapIcon size={28}/>
+                    </div>
+                    <div>
+                        <p className="text-2xl font-bold text-white">Live</p>
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">System Status</p>
+                    </div>
                  </div>
-                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
-                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center"><Users size={20}/></div>
-                    <div><p className="text-2xl font-bold">Public</p><p className="text-xs text-gray-400 font-bold uppercase">Access</p></div>
+                 
+                 {/* Card 2 */}
+                 <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-sm flex items-center gap-5 hover:shadow-md transition duration-300 hover:border-slate-600">
+                    <div className="w-14 h-14 bg-emerald-900/30 text-emerald-400 rounded-2xl flex items-center justify-center">
+                        <Users size={28}/>
+                    </div>
+                    <div>
+                        <p className="text-2xl font-bold text-white">Public</p>
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Access Level</p>
+                    </div>
                  </div>
-                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
-                    <div className="w-10 h-10 bg-violet-50 text-violet-600 rounded-lg flex items-center justify-center"><CheckCircle2 size={20}/></div>
-                    <div><p className="text-2xl font-bold">Ready</p><p className="text-xs text-gray-400 font-bold uppercase">Integrations</p></div>
+
+                 {/* Card 3 */}
+                 <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-sm flex items-center gap-5 hover:shadow-md transition duration-300 hover:border-slate-600">
+                    <div className="w-14 h-14 bg-violet-900/30 text-violet-400 rounded-2xl flex items-center justify-center">
+                        <CheckCircle2 size={28}/>
+                    </div>
+                    <div>
+                        <p className="text-2xl font-bold text-white">Active</p>
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Integrations</p>
+                    </div>
                  </div>
             </div>
         </div>
     );
 };
 
-const NavBtn = ({ icon: IconComponent, label, isActive, onClick, badge }) => (
-    <button onClick={onClick} className={`sidebar-nav-btn ${isActive ? 'active' : 'inactive'}`}>
-        <div className="nav-btn-content"><IconComponent size={18} />{label}</div>
-        {badge && <span className="badge-red">{badge}</span>}
+// --- SIDEBAR NAVIGATION BUTTON ---
+const NavBtn = ({ icon: Icon, label, isActive, onClick }) => (
+    <button 
+        onClick={onClick} 
+        className={`
+            w-full flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-200 group relative overflow-hidden
+            ${isActive 
+                ? 'bg-gradient-to-r from-emerald-600 to-blue-600 text-white shadow-md shadow-emerald-500/20' 
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }
+        `}
+    >
+        <div className={`
+            p-2 rounded-lg transition-colors duration-200
+            ${isActive ? 'bg-white/20 text-white' : 'bg-transparent group-hover:bg-slate-700'}
+        `}>
+            <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+        </div>
+        <span className={`font-bold text-sm tracking-wide ${isActive ? 'text-white' : ''}`}>
+            {label}
+        </span>
     </button>
 );
 
@@ -74,104 +115,115 @@ const NavBtn = ({ icon: IconComponent, label, isActive, onClick, badge }) => (
 export const AgentDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview'); 
   const { activeLead, setActiveLeadId } = useLeads();
-  const { user, profile, signOut, loading } = useAuth(); 
+  const { user, profile, signOut, loading, updateProfile } = useAuth(); 
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const hasCheckedRef = useRef(false); 
   
-  const [crmEnabled, setCrmEnabled] = useState(false);
-
-  const toggleCrmMode = async () => {
-      const newValue = !crmEnabled;
-      setCrmEnabled(newValue); 
-      const { error } = await supabase.from('profiles').update({ crm_enabled: newValue }).eq('id', user.id);
-      if (error) setCrmEnabled(!newValue); 
-  };
-
   useEffect(() => {
     if (loading || hasCheckedRef.current) return;
     if (user && (!profile || !profile.username)) {
         const timer = setTimeout(() => setShowProfileSetup(true), 0);
         return () => clearTimeout(timer);
     }
-    
-    if (profile?.crm_enabled !== undefined) {
-        const timer = setTimeout(() => {
-            setCrmEnabled(profile.crm_enabled);
-        }, 0);
-        hasCheckedRef.current = true;
-        return () => clearTimeout(timer);
-    }
     hasCheckedRef.current = true; 
   }, [user, profile, loading]);
 
   return (
-    <div className="dashboard-container">
-      <aside className="sidebar">
-        <div className="sidebar-brand"><div className="brand-logo">V</div>VERITY<span className="brand-text-sub">AGENT</span></div>
-        <nav className="sidebar-nav">
-           <div className="nav-section-label">Main</div>
-           <NavBtn icon={LayoutDashboard} label="Overview" isActive={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
-           
-           {/* [NEW] PROJECTS BUTTON */}
-           <NavBtn icon={Map} label="Projects" isActive={activeTab === 'projects'} onClick={() => setActiveTab('projects')} />
-           
-           <NavBtn icon={Users} label="Leads Board" isActive={activeTab === 'leads'} onClick={() => setActiveTab('leads')} />
-           <NavBtn icon={Building2} label="Properties" isActive={activeTab === 'properties'} onClick={() => setActiveTab('properties')} />
-           
-           {/* REMOVED MESSAGES BUTTON HERE */}
-
-           <NavBtn icon={Settings} label="Builder" isActive={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
-        </nav>
+    // [ROOT THEME] Deep Slate Background
+    <div className="flex h-screen font-sans overflow-hidden bg-slate-950 text-white">
+      
+      {/* --- SIDEBAR --- */}
+      <aside className="w-[280px] bg-slate-900 border-r border-slate-800 flex flex-col h-full shrink-0 z-20 shadow-lg">
         
-        <div className="sidebar-profile mt-auto">
-            <div className="profile-container">
-                <img src={profile?.avatar_url || `https://ui-avatars.com/api/?name=${profile?.full_name || 'User'}&background=random`} className="profile-avatar" alt="Agent" />
-                <div className="flex-1 min-w-0">
-                    <p className="profile-name truncate font-bold text-gray-800">{profile?.full_name || 'Setup Required'}</p>
-                    {!profile?.username ? (
-                         <button onClick={() => setShowProfileSetup(true)} className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 mt-0.5 font-bold animate-pulse">
-                            <UserCog size={12} /> Finish Setup
-                         </button>
-                    ) : (
-                        <button onClick={signOut} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1 mt-0.5"><LogOut size={10} /> Sign Out</button>
-                    )}
+        {/* 1. TOP: Logo & Profile */}
+        <div className="p-8 pb-4 flex flex-col items-center border-b border-slate-800">
+            {/* Logo */}
+            <div className="flex flex-col items-center gap-3 mb-8">
+                <img src="/pins/veritylogo.svg" alt="Verity" className="h-12 w-auto drop-shadow-sm" />
+                <span className="text-[10px] font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-blue-600 uppercase tracking-[0.3em]">
+                    Command Center
+                </span>
+            </div>
+
+            {/* Profile Picture */}
+            <div className="relative group cursor-pointer mb-3" onClick={() => setShowProfileSetup(true)}>
+                <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition duration-500 blur"></div>
+                <img 
+                    src={profile?.avatar_url || `https://ui-avatars.com/api/?name=${profile?.full_name || 'User'}&background=0D9488&color=fff`} 
+                    className="relative w-24 h-24 rounded-full border-4 border-slate-800 shadow-xl object-cover" 
+                    alt="Profile" 
+                />
+                <div className="absolute bottom-0 right-0 bg-slate-800 p-1.5 rounded-full shadow-md border border-slate-700 text-blue-400 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
+                    <UserCog size={14} />
                 </div>
             </div>
+
+            <h3 className="text-lg font-bold text-white mt-1">{profile?.full_name || 'Welcome Agent'}</h3>
+            <p className="text-xs font-medium text-slate-400">@{profile?.username || 'setup_required'}</p>
+        </div>
+
+        {/* 2. MIDDLE: Navigation */}
+        <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-1">
+           <div className="px-4 mb-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">Dashboards</div>
+           <NavBtn icon={LayoutDashboard} label="Overview" isActive={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
+           <NavBtn icon={Users} label="Leads Board" isActive={activeTab === 'leads'} onClick={() => setActiveTab('leads')} />
+           
+           <div className="px-4 mb-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Management</div>
+           <NavBtn icon={Map} label="Project Maps" isActive={activeTab === 'projects'} onClick={() => setActiveTab('projects')} />
+           <NavBtn icon={Building2} label="Properties" isActive={activeTab === 'properties'} onClick={() => setActiveTab('properties')} />
+           
+           <div className="px-4 mb-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Tools</div>
+           <NavBtn icon={Settings} label="Widget Builder" isActive={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+        </nav>
+        
+        {/* 3. BOTTOM: Logout */}
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+            <button 
+                onClick={signOut} 
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-red-400 font-bold text-sm hover:bg-red-900/20 transition-all duration-200 group border border-transparent hover:border-red-900/30"
+            >
+                <LogOut size={18} className="group-hover:-translate-x-1 transition-transform" />
+                Sign Out
+            </button>
         </div>
       </aside>
 
-      <main className="dashboard-main">
-        {activeTab !== 'overview' && (
-            <header className="dashboard-header">
-                <h1 className="text-xl font-bold hidden md:block">
-                    {activeTab === 'leads' ? 'Leads Pipeline' : 
-                     activeTab === 'settings' ? 'Widget Builder' : 
-                     activeTab === 'properties' ? 'Inventory Manager' : 
-                     activeTab === 'projects' ? 'Project Maps' : 
-                     'Dashboard'}
-                </h1>
-                {/* REMOVED SEARCH BAR AND NOTIFICATION BELL */}
-            </header>
-        )}
+      {/* --- MAIN CONTENT AREA --- */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative bg-slate-950">
+        
+        {/* Mobile Header (Hidden on Desktop) */}
+        <div className="md:hidden h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
+            <img src="/pins/veritylogo.svg" alt="V" className="h-8 w-auto" />
+            <button onClick={signOut} className="text-slate-400"><LogOut size={20}/></button>
+        </div>
 
-        {/* --- TABS --- */}
-        {activeTab === 'overview' ? <OverviewPanel profile={profile} /> : 
-         activeTab === 'settings' ? <WidgetBuilder profile={profile} /> : 
-         activeTab === 'properties' ? <PropertyManager /> : 
-         activeTab === 'projects' ? <ProjectsManager /> : 
-         activeTab === 'leads' ? (
-             <LeadsBoard crmEnabled={crmEnabled} onToggleCrm={toggleCrmMode} />
-         ) : 
-         <div className="empty-state-container"><div className="empty-state-content"><div className="empty-state-icon-wrapper"><Settings size={24} /></div><p>This module is under construction.</p></div></div>}
+        {/* Content Render */}
+        <div className="flex-1 overflow-hidden relative">
+            {activeTab === 'overview' ? <OverviewPanel profile={profile} user={user} /> : 
+             activeTab === 'settings' ? <WidgetBuilder profile={profile} /> : 
+             activeTab === 'properties' ? <PropertyManager /> : 
+             activeTab === 'projects' ? <ProjectsManager /> : 
+             activeTab === 'leads' ? (
+                 <LeadsBoard 
+                    crmEnabled={profile?.crm_enabled || false} 
+                    onToggleCrm={async () => {
+                        const newVal = !profile?.crm_enabled;
+                        if(updateProfile) updateProfile({ crm_enabled: newVal });
+                        await supabase.from('profiles').update({ crm_enabled: newVal }).eq('id', user.id);
+                    }} 
+                 />
+             ) : null}
+        </div>
         
         <LeadInspector lead={activeLead} onClose={() => setActiveLeadId(null)} />
       </main>
 
-      <div className="mobile-nav">
-          <button onClick={() => setActiveTab('overview')} className="mobile-nav-item"><LayoutDashboard size={20}/>Home</button>
-          <button onClick={() => setActiveTab('leads')} className="mobile-nav-item"><Users size={20}/>Leads</button>
-          <button onClick={() => setActiveTab('projects')} className="mobile-nav-item"><Map size={20}/>Maps</button>
-          <button onClick={() => setActiveTab('settings')} className="mobile-nav-item"><Settings size={20}/>Builder</button>
+      {/* Mobile Bottom Nav */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-900 border-t border-slate-800 flex items-center justify-around z-50 safe-area-pb">
+          <button onClick={() => setActiveTab('overview')} className={`flex flex-col items-center p-2 ${activeTab === 'overview' ? 'text-blue-400' : 'text-slate-400'}`}><LayoutDashboard size={20}/><span className="text-[10px] font-bold">Home</span></button>
+          <button onClick={() => setActiveTab('leads')} className={`flex flex-col items-center p-2 ${activeTab === 'leads' ? 'text-blue-400' : 'text-slate-400'}`}><Users size={20}/><span className="text-[10px] font-bold">Leads</span></button>
+          <button onClick={() => setActiveTab('projects')} className={`flex flex-col items-center p-2 ${activeTab === 'projects' ? 'text-blue-400' : 'text-slate-400'}`}><Map size={20}/><span className="text-[10px] font-bold">Maps</span></button>
+          <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center p-2 ${activeTab === 'settings' ? 'text-blue-400' : 'text-slate-400'}`}><Settings size={20}/><span className="text-[10px] font-bold">Tools</span></button>
       </div>
 
       <div className="relative z-[9999]">

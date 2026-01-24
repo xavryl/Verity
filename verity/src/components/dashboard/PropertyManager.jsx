@@ -14,6 +14,8 @@ const Toast = Swal.mixin({
   showConfirmButton: false,
   timer: 3000,
   timerProgressBar: true,
+  background: '#1e293b', // Dark background for toast
+  color: '#fff',
   didOpen: (toast) => {
     toast.addEventListener('mouseenter', Swal.stopTimer)
     toast.addEventListener('mouseleave', Swal.resumeTimer)
@@ -44,7 +46,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
   
   const [formData, setFormData] = useState({
     name: '', price: '', location: '', coords: '', 
-    description: '', org_id: 'org_default', 
+    description: '', 
     gallery_files: [],
     beds: '', baths: '', sqm: '',
     category: 'residential',
@@ -68,7 +70,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
     let query = supabase
         .from('properties')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', user.id) // STRICTLY USER_ID
         .order('created_at', { ascending: false });
 
     if (projectId) {
@@ -77,7 +79,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
 
     const { data: propData, error } = await query;
 
-    if (!error) setProperties(propData);
+    if (!error) setProperties(propData || []);
     setLoading(false);
   }, [user, projectId]);
 
@@ -109,15 +111,18 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
       setSelectedIds(newSet);
   };
 
-  // --- [NEW] SINGLE DELETE ACTION ---
+  // --- SINGLE DELETE ACTION ---
   const handleDelete = async (id) => {
       const result = await Swal.fire({
           title: 'Delete this property?',
           text: "You won't be able to revert this.",
           icon: 'warning',
           showCancelButton: true,
-          confirmButtonColor: '#d33',
-          confirmButtonText: 'Yes, delete it'
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Yes, delete it',
+          background: '#1e293b',
+          color: '#fff'
       });
 
       if (result.isConfirmed) {
@@ -137,8 +142,11 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
           text: "This cannot be undone.",
           icon: 'warning',
           showCancelButton: true,
-          confirmButtonColor: '#d33',
-          confirmButtonText: 'Delete All'
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Delete All',
+          background: '#1e293b',
+          color: '#fff'
       });
 
       if (result.isConfirmed) {
@@ -160,7 +168,6 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
           location: prop.location,
           coords: `${prop.lat}, ${prop.lng}`, 
           description: prop.description || '',
-          org_id: prop.org_id || 'org_default',
           gallery_files: prop.gallery_images ? prop.gallery_images.map((url, i) => ({ url, name: `Image ${i+1}` })) : [],
           beds: prop.specs?.beds || '',
           baths: prop.specs?.baths || '',
@@ -174,7 +181,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
   const openNewModal = () => {
       setEditingId(null);
       setFormData({ 
-          name: '', price: '', location: '', coords: '', description: '', org_id: 'org_default', 
+          name: '', price: '', location: '', coords: '', description: '', 
           gallery_files: [], beds: '', baths: '', sqm: '',
           category: 'residential',
           map_id: projectId || '' 
@@ -198,11 +205,13 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
         location: formData.location,
         lat, lng, 
         description: formData.description,
-        user_id: user.id,
+        user_id: user.id, // STRICTLY USER_ID
         map_id: formData.map_id || null, 
         main_image: formData.gallery_files[0]?.url || '',
         gallery_images: formData.gallery_files.map(f => f.url),
         category: formData.category, 
+        // [FIX] Standardized status to 'available'
+        status: 'available', 
         specs: { beds: formData.beds, baths: formData.baths, sqm: formData.sqm }
     };
 
@@ -221,7 +230,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
         fetchData();
         Toast.fire({ icon: 'success', title: editingId ? 'Updated' : 'Created' });
     } else {
-        Swal.fire('Error', error.message, 'error');
+        Swal.fire({ title: 'Error', text: error.message, icon: 'error', background: '#1e293b', color: '#fff' });
     }
   };
 
@@ -257,7 +266,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
           if (rowStr.includes('name') && rowStr.includes('price')) { headerIdx = i; break; }
       }
       
-      if (headerIdx === -1) return Swal.fire('Invalid Format', 'Could not find "Name" and "Price" columns.', 'error');
+      if (headerIdx === -1) return Swal.fire({ title: 'Invalid Format', text: 'Could not find "Name" and "Price" columns.', icon: 'error', background: '#1e293b', color: '#fff' });
 
       const headers = rawRows[headerIdx].map(h => String(h).trim().toLowerCase());
       
@@ -293,8 +302,8 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
               lng: lng || 0, 
               description: item['description'] || '',
               user_id: user.id, 
-              org_id: 'org_default', 
-              status: 'active', 
+              // [FIX] Standardized status on import
+              status: 'available', 
               type: 'condo', 
               category: item['category']?.toLowerCase() || 'residential', 
               map_id: targetMapId, 
@@ -314,7 +323,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
       const { error } = await supabase.from('properties').insert(newItems);
       
       if (error) {
-          Swal.fire('Import Failed', error.message, 'error');
+          Swal.fire({ title: 'Import Failed', text: error.message, icon: 'error', background: '#1e293b', color: '#fff' });
       } else {
           Toast.fire({ icon: 'success', title: `Imported ${newItems.length} properties!` });
           fetchData();
@@ -371,29 +380,28 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 p-6 overflow-hidden">
+    <div className="h-full flex flex-col p-6 overflow-hidden">
         {/* HEADER */}
         <div className="flex justify-between items-center mb-6 shrink-0">
             <div>
                 {projectId && onBack && (
-                    <button onClick={onBack} className="text-gray-500 hover:text-gray-900 flex items-center gap-1 mb-1 text-xs font-bold uppercase tracking-wider">
+                    <button onClick={onBack} className="text-slate-400 hover:text-white flex items-center gap-1 mb-1 text-xs font-bold uppercase tracking-wider transition">
                         <ArrowLeft size={12} /> Back to Projects
                     </button>
                 )}
-                <h1 className="text-2xl font-bold text-gray-900">
+                <h1 className="text-2xl font-bold text-white">
                     {projectId ? getProjectName(projectId) : 'All Listings'}
                 </h1>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-slate-400">
                     {projectId ? 'Manage properties specifically for this map.' : 'Centralized inventory management.'}
                 </p>
             </div>
             
             <div className="flex gap-2 items-center">
-                {/* [UPDATED] MASS DELETE BUTTON (Only shows when items are selected) */}
                 {selectedIds.size > 0 && (
                     <button 
                         onClick={handleMassDelete}
-                        className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 font-bold rounded-xl hover:bg-red-100 flex items-center gap-2 shadow-sm transition animate-in fade-in zoom-in-95"
+                        className="px-4 py-2 bg-red-900/20 text-red-400 border border-red-900/30 font-bold rounded-xl hover:bg-red-900/40 flex items-center gap-2 shadow-sm transition animate-in fade-in zoom-in-95"
                     >
                         <Trash2 size={18} /> 
                         Delete ({selectedIds.size})
@@ -405,7 +413,7 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
                         <select 
                             value={activeProjectFilter}
                             onChange={(e) => setActiveProjectFilter(e.target.value)}
-                            className="appearance-none pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none hover:border-gray-300 transition shadow-sm cursor-pointer"
+                            className="appearance-none pl-9 pr-8 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-slate-300 focus:outline-none focus:border-emerald-500 hover:border-slate-600 transition shadow-sm cursor-pointer"
                         >
                             <option value="all">All Projects</option>
                             <option value="unassigned">Unassigned</option>
@@ -416,81 +424,80 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
                                 </option>
                             ))}
                         </select>
-                        <Filter size={16} className="absolute left-3 top-2.5 text-gray-400 pointer-events-none"/>
+                        <Filter size={16} className="absolute left-3 top-2.5 text-slate-500 pointer-events-none"/>
                     </div>
                 )}
 
-                <div className="h-6 w-px bg-gray-300 mx-2"></div>
+                <div className="h-6 w-px bg-slate-700 mx-2"></div>
 
-                <SmartUpdateBtn />
+                {SmartUpdateBtn && <SmartUpdateBtn />}
 
                 <input ref={fileInputRef} type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileImport} />
-                <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 flex items-center gap-2 shadow-sm transition"><Download size={18} /> Template</button>
-                <button onClick={() => fileInputRef.current.click()} className="px-4 py-2 bg-white border border-gray-200 text-emerald-700 font-bold rounded-xl hover:bg-emerald-50 flex items-center gap-2 shadow-sm transition"><FileSpreadsheet size={18} /> Import</button>
-                <button onClick={openNewModal} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 flex items-center gap-2 shadow-lg transition"><Plus size={18} /> Add Property</button>
+                <button onClick={handleDownloadTemplate} className="px-4 py-2 bg-slate-900 border border-slate-700 text-slate-300 font-bold rounded-xl hover:bg-slate-800 hover:text-white flex items-center gap-2 shadow-sm transition"><Download size={18} /> Template</button>
+                <button onClick={() => fileInputRef.current.click()} className="px-4 py-2 bg-slate-900 border border-slate-700 text-emerald-400 font-bold rounded-xl hover:bg-slate-800 hover:text-emerald-300 flex items-center gap-2 shadow-sm transition"><FileSpreadsheet size={18} /> Import</button>
+                <button onClick={openNewModal} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-500 flex items-center gap-2 shadow-lg shadow-emerald-900/20 transition"><Plus size={18} /> Add Property</button>
             </div>
         </div>
 
         {/* TABLE */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        <div className="flex-1 bg-slate-900 rounded-2xl shadow-lg border border-slate-800 overflow-hidden flex flex-col">
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                    <thead className="bg-slate-950 border-b border-slate-800 sticky top-0 z-10">
                         <tr>
                             <th className="p-4 w-10">
-                                <button onClick={toggleSelectAll} className="text-gray-400 hover:text-emerald-600 transition">
-                                    {selectedIds.size > 0 && selectedIds.size === filteredProperties.length ? <CheckSquare size={20} className="text-emerald-600"/> : <Square size={20}/>}
+                                <button onClick={toggleSelectAll} className="text-slate-500 hover:text-emerald-400 transition">
+                                    {selectedIds.size > 0 && selectedIds.size === filteredProperties.length ? <CheckSquare size={20} className="text-emerald-500"/> : <Square size={20}/>}
                                 </button>
                             </th>
-                            <th className="p-4 text-xs font-bold text-gray-500 uppercase">Image</th>
-                            <th className="p-4 text-xs font-bold text-gray-500 uppercase">Name</th>
-                            <th className="p-4 text-xs font-bold text-gray-500 uppercase">Project</th>
-                            <th className="p-4 text-xs font-bold text-gray-500 uppercase">Category</th>
-                            <th className="p-4 text-xs font-bold text-gray-500 uppercase">Price</th>
-                            <th className="p-4 text-xs font-bold text-gray-500 uppercase">Details</th> 
-                            <th className="p-4 text-xs font-bold text-gray-500 uppercase text-right">Actions</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase">Image</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase">Name</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase">Project</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase">Category</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase">Price</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase">Details</th> 
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-slate-800">
                         {loading ? (
-                            <tr><td colSpan="8" className="p-12 text-center text-gray-400"><Loader2 className="animate-spin inline mr-2"/> Loading Properties...</td></tr>
+                            <tr><td colSpan="8" className="p-12 text-center text-slate-500"><Loader2 className="animate-spin inline mr-2"/> Loading Properties...</td></tr>
                         ) : filteredProperties.length === 0 ? (
-                            <tr><td colSpan="8" className="p-12 text-center text-gray-400">No properties found.</td></tr>
+                            <tr><td colSpan="8" className="p-12 text-center text-slate-500">No properties found.</td></tr>
                         ) : (
                             filteredProperties.map((prop) => (
-                                <tr key={prop.id} className="hover:bg-gray-50 transition">
+                                <tr key={prop.id} className="hover:bg-slate-800/50 transition">
                                     <td className="p-4">
-                                        <button onClick={() => toggleSelectRow(prop.id)} className="text-gray-300 hover:text-emerald-600">
-                                            {selectedIds.has(prop.id) ? <CheckSquare size={20} className="text-emerald-600"/> : <Square size={20}/>}
+                                        <button onClick={() => toggleSelectRow(prop.id)} className="text-slate-600 hover:text-emerald-400 transition">
+                                            {selectedIds.has(prop.id) ? <CheckSquare size={20} className="text-emerald-500"/> : <Square size={20}/>}
                                         </button>
                                     </td>
                                     
-                                    <td className="p-4"><div className="w-10 h-10 rounded bg-gray-100 overflow-hidden border border-gray-200">{prop.main_image ? <img src={prop.main_image} className="w-full h-full object-cover"/> : <ImageIcon className="p-2 text-gray-400"/>}</div></td>
-                                    <td className="p-4 font-bold text-gray-900">{prop.name}</td>
+                                    <td className="p-4"><div className="w-10 h-10 rounded bg-slate-800 overflow-hidden border border-slate-700">{prop.main_image ? <img src={prop.main_image} className="w-full h-full object-cover"/> : <ImageIcon className="p-2 text-slate-600"/>}</div></td>
+                                    <td className="p-4 font-bold text-white">{prop.name}</td>
                                     
                                     <td className="p-4">
                                         {prop.map_id ? (
-                                            <span className="flex items-center gap-1.5 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-md border border-blue-100 w-fit">
+                                            <span className="flex items-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-900/20 px-2 py-1 rounded-md border border-blue-900/30 w-fit">
                                                 <Map size={12}/> {getProjectName(prop.map_id)}
                                             </span>
                                         ) : (
-                                            <span className="text-xs text-gray-400 italic">Unassigned</span>
+                                            <span className="text-xs text-slate-500 italic">Unassigned</span>
                                         )}
                                     </td>
 
-                                    <td className="p-4"><span className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider rounded-md bg-gray-100 text-gray-500 border border-gray-200">{prop.category || 'residential'}</span></td>
-                                    <td className="p-4 font-mono text-emerald-600 font-bold">{prop.price}</td>
+                                    <td className="p-4"><span className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider rounded-md bg-slate-800 text-slate-400 border border-slate-700">{prop.category || 'residential'}</span></td>
+                                    <td className="p-4 font-mono text-emerald-400 font-bold">{prop.price}</td>
                                     <td className="p-4">
-                                        <div className="flex items-center gap-3 text-xs text-gray-600">
+                                        <div className="flex items-center gap-3 text-xs text-slate-400">
                                             {prop.specs?.beds && <span className="flex items-center gap-1"><Bed size={14}/> {prop.specs.beds}</span>}
                                             {prop.specs?.sqm && <span className="flex items-center gap-1"><Ruler size={14}/> {prop.specs.sqm}m²</span>}
                                         </div>
                                     </td>
                                     <td className="p-4 text-right">
                                         <div className="flex justify-end gap-2">
-                                            <button onClick={() => openEditModal(prop)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Edit2 size={16}/></button>
-                                            {/* [UPDATED] Use handleDelete instead of handleMassDelete */}
-                                            <button onClick={() => handleDelete(prop.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded transition"><Trash2 size={16}/></button>
+                                            <button onClick={() => openEditModal(prop)} className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-900/20 rounded transition"><Edit2 size={16}/></button>
+                                            <button onClick={() => handleDelete(prop.id)} className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded transition"><Trash2 size={16}/></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -503,24 +510,49 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
 
         {/* MODAL */}
         {isModalOpen && (
-            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
-                        <h3 className="font-bold text-lg">{editingId ? 'Edit Property' : 'Add New Property'}</h3>
-                        <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full text-gray-500"><X size={20}/></button>
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-700 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                    <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950 shrink-0">
+                        <h3 className="font-bold text-lg text-white">{editingId ? 'Edit Property' : 'Add New Property'}</h3>
+                        <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 transition"><X size={20}/></button>
                     </div>
                     
                     <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
-                        
+                        <div className="space-y-3">
+                            <label className="block text-xs font-bold text-slate-400">Property Images</label>
+                            <div 
+                                className={`relative w-full rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer p-8 ${dragActive ? 'border-emerald-500 bg-emerald-900/20' : 'border-slate-700 bg-slate-800 hover:bg-slate-750'}`}
+                                onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
+                                onClick={() => imageInputRef.current.click()}
+                            >
+                                <input ref={imageInputRef} type="file" multiple className="hidden" accept="image/*" onChange={(e) => handleImageProcess(e.target.files)} />
+                                <div className="w-10 h-10 bg-slate-700 rounded-full shadow-sm flex items-center justify-center mb-2 text-emerald-400">{uploading ? <Loader2 className="animate-spin"/> : <UploadCloud />}</div>
+                                <p className="text-sm font-bold text-slate-300">Click or Drag images here</p>
+                            </div>
+                            {formData.gallery_files.length > 0 && (
+                                <div className="space-y-2 mt-2 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                                    {formData.gallery_files.map((file, idx) => (
+                                        <div key={idx} className="flex items-center justify-between p-2 bg-slate-800 border border-slate-700 rounded-md shadow-sm">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="w-8 h-8 rounded bg-slate-900 overflow-hidden shrink-0 border border-slate-700"><img src={file.url} alt="" className="w-full h-full object-cover" /></div>
+                                                <div className="min-w-0"><p className="text-xs font-bold text-slate-300 truncate max-w-[200px]">{file.name}</p></div>
+                                            </div>
+                                            <button type="button" onClick={() => removeFile(idx)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-900/20 rounded transition"><X size={14} /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-2">Project Assignment</label>
+                                <label className="block text-xs font-bold text-slate-400 mb-2">Project Assignment</label>
                                 <div className="relative">
                                     <select 
                                         disabled={!!projectId} 
                                         value={formData.map_id}
                                         onChange={(e) => setFormData({...formData, map_id: e.target.value})}
-                                        className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-blue-500 appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
+                                        className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm font-medium text-white focus:outline-none focus:border-emerald-500 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         <option value="">-- No Project (Unassigned) --</option>
                                         {projects.map(p => (
@@ -529,12 +561,12 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
                                             </option>
                                         ))}
                                     </select>
-                                    <Map size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none"/>
+                                    <Map size={16} className="absolute right-3 top-3 text-slate-500 pointer-events-none"/>
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-2">Listing Category</label>
+                                <label className="block text-xs font-bold text-slate-400 mb-2">Listing Category</label>
                                 <div className="flex gap-2">
                                     {['residential', 'commercial', 'land'].map(cat => (
                                         <button
@@ -542,8 +574,8 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
                                             onClick={() => setFormData({...formData, category: cat})}
                                             className={`px-3 py-2 rounded-lg text-xs font-bold border capitalize transition flex-1 text-center ${
                                                 formData.category === cat 
-                                                ? 'bg-emerald-600 text-white border-emerald-600' 
-                                                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                                                ? 'bg-emerald-600 text-white border-emerald-500' 
+                                                : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
                                             }`}
                                         >
                                             {cat}
@@ -554,48 +586,31 @@ export const PropertyManager = ({ projectId = null, onBack = null }) => {
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-                            <div><label className="block text-xs font-bold text-gray-500 mb-1">Name</label><input required className="w-full p-2 border rounded-lg" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-gray-500 mb-1">Price</label><input required className="w-full p-2 border rounded-lg" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} /></div>
+                            <div><label className="block text-xs font-bold text-slate-400 mb-1">Name</label><input required className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-emerald-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. The Alcove"/></div>
+                            <div><label className="block text-xs font-bold text-slate-400 mb-1">Price</label><input required className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-emerald-500" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} placeholder="e.g. ₱12M"/></div>
                         </div>
 
                         <div className="grid grid-cols-3 gap-4">
-                            <div><label className="block text-xs font-bold text-gray-500 mb-1">Bedrooms</label><input type="number" className="w-full p-2 border rounded-lg" value={formData.beds} onChange={e => setFormData({...formData, beds: e.target.value})} placeholder="e.g. 3"/></div>
-                            <div><label className="block text-xs font-bold text-gray-500 mb-1">Bathrooms</label><input type="number" className="w-full p-2 border rounded-lg" value={formData.baths} onChange={e => setFormData({...formData, baths: e.target.value})} placeholder="e.g. 2"/></div>
-                            <div><label className="block text-xs font-bold text-gray-500 mb-1">Area (sqm)</label><input type="number" className="w-full p-2 border rounded-lg" value={formData.sqm} onChange={e => setFormData({...formData, sqm: e.target.value})} placeholder="e.g. 50"/></div>
+                            <div><label className="block text-xs font-bold text-slate-400 mb-1">Bedrooms</label><input type="number" className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-emerald-500" value={formData.beds} onChange={e => setFormData({...formData, beds: e.target.value})} placeholder="e.g. 3"/></div>
+                            <div><label className="block text-xs font-bold text-slate-400 mb-1">Bathrooms</label><input type="number" className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-emerald-500" value={formData.baths} onChange={e => setFormData({...formData, baths: e.target.value})} placeholder="e.g. 2"/></div>
+                            <div><label className="block text-xs font-bold text-slate-400 mb-1">Area (sqm)</label><input type="number" className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-emerald-500" value={formData.sqm} onChange={e => setFormData({...formData, sqm: e.target.value})} placeholder="e.g. 50"/></div>
                         </div>
 
-                        <div><label className="block text-xs font-bold text-gray-500 mb-1">Location</label><input className="w-full p-2 border rounded-lg" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} /></div>
+                        <div><label className="block text-xs font-bold text-slate-400 mb-1">Location</label><input className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-emerald-500" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} placeholder="e.g. Cebu IT Park"/></div>
                         
                         <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">Coordinates (Lat, Lng)</label>
-                            <input className="w-full p-2 border rounded-lg font-mono text-sm" value={formData.coords} onChange={e => setFormData({...formData, coords: e.target.value})} placeholder="e.g. 10.3157, 123.8854" />
+                            <label className="block text-xs font-bold text-slate-400 mb-1">Coordinates (Lat, Lng)</label>
+                            <input 
+                                className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg font-mono text-sm text-white focus:outline-none focus:border-emerald-500" 
+                                value={formData.coords} 
+                                onChange={e => setFormData({...formData, coords: e.target.value})} 
+                                placeholder="Paste from Google Maps: 10.3157, 123.8854"
+                            />
                         </div>
 
-                        <div><label className="block text-xs font-bold text-gray-500 mb-1">Description</label><textarea rows="3" className="w-full p-2 border rounded-lg resize-none" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
+                        <div><label className="block text-xs font-bold text-slate-400 mb-1">Description</label><textarea rows="3" className="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg resize-none text-white focus:outline-none focus:border-emerald-500" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
 
-                        <div className="space-y-3">
-                            <label className="block text-xs font-bold text-gray-500">Property Images</label>
-                            <div className={`relative w-full rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer p-8 ${dragActive ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`} onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} onClick={() => imageInputRef.current.click()}>
-                                <input ref={imageInputRef} type="file" multiple className="hidden" accept="image/*" onChange={(e) => handleImageProcess(e.target.files)} />
-                                <div className="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center mb-2 text-emerald-600">{uploading ? <Loader2 className="animate-spin"/> : <UploadCloud />}</div>
-                                <p className="text-sm font-bold text-gray-700">Click or Drag images here</p>
-                            </div>
-                            {formData.gallery_files.length > 0 && (
-                                <div className="space-y-2 mt-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                    {formData.gallery_files.map((file, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded-md shadow-sm">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden shrink-0 border border-gray-200"><img src={file.url} alt="" className="w-full h-full object-cover" /></div>
-                                                <div className="min-w-0"><p className="text-xs font-bold text-gray-700 truncate max-w-[200px]">{file.name}</p></div>
-                                            </div>
-                                            <button type="button" onClick={() => removeFile(idx)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition"><X size={14} /></button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <button type="submit" disabled={uploading} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl hover:bg-emerald-700 transition flex justify-center items-center gap-2">
+                        <button type="submit" disabled={uploading} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl hover:bg-emerald-500 transition flex justify-center items-center gap-2 shadow-lg shadow-emerald-900/20">
                             {uploading ? <Loader2 className="animate-spin" /> : <><Save size={18} /> {editingId ? 'Update Listing' : 'Save Listing'}</>}
                         </button>
                     </form>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase'; 
-import { ShieldCheck, Loader2, LayoutDashboard, UserCheck } from 'lucide-react';
+import { ShieldCheck, Loader2, UserCheck } from 'lucide-react';
 
 export const LoginPage = () => {
     const [email, setEmail] = useState('');
@@ -19,30 +19,18 @@ export const LoginPage = () => {
         setStatus('Authenticating...');
 
         try {
-            // 1. Sign In
             const { data: authData, error: authError } = await signIn({ email, password });
             if (authError) throw authError;
 
-            // 2. Check Role & Profile
             setStatus('Checking Clearance...');
             
-            // --- DEBUG LOG START ---
-            console.log("Logged in User ID:", authData.user.id);
-            // --- DEBUG LOG END ---
-
             if (authData?.user) {
-                const { data: profile, error: profileError } = await supabase
+                const { data: profile } = await supabase
                     .from('profiles')
                     .select('username, role') 
                     .eq('id', authData.user.id)
                     .single();
 
-                // --- DEBUG LOG START ---
-                console.log("Profile Data Found:", profile);
-                console.log("Profile Error (if any):", profileError);
-                // --- DEBUG LOG END ---
-
-                // 3. Role-Based Redirect
                 if (profile?.role === 'superadmin') {
                     setStatus('Clearance: GOD MODE');
                     setTimeout(() => navigate('/superadmin'), 800);
@@ -52,7 +40,6 @@ export const LoginPage = () => {
                     setTimeout(() => navigate('/admin'), 800);
                 } 
                 else {
-                    // Default to Agent
                     setStatus('Clearance: AGENT');
                     setTimeout(() => navigate('/agent'), 800);
                 }
@@ -68,40 +55,39 @@ export const LoginPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-xl border border-gray-200">
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+            <div className="bg-slate-900 w-full max-w-md p-8 rounded-2xl shadow-2xl border border-slate-800">
+                
+                {/* BRAND HEADER */}
                 <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200 transition-all duration-500">
-                        {loading ? (
-                            <UserCheck className="text-white animate-pulse" size={32} />
-                        ) : (
-                            <LayoutDashboard className="text-white" size={32} />
-                        )}
+                    <div className="w-20 h-20 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-inner border border-slate-700">
+                        <img src="/pins/veritylogo.svg" alt="Verity" className="w-12 h-12" />
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900">Verity Portal</h1>
-                    <p className="text-gray-500 text-sm mt-1">Secure Entry</p>
+                    <h1 className="text-2xl font-black text-white tracking-tight">COMMAND CENTER</h1>
+                    <p className="text-slate-400 text-sm mt-1 font-medium tracking-wide">SECURE ACCESS PORTAL</p>
                 </div>
 
-                <form onSubmit={handleLogin} className="space-y-4">
+                {/* LOGIN FORM */}
+                <form onSubmit={handleLogin} className="space-y-5">
                     <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Email</label>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Email Address</label>
                         <input 
                             type="email" 
                             required 
                             disabled={loading}
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition disabled:opacity-50"
+                            className="w-full p-3.5 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white placeholder:text-slate-600 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50"
                             value={email}
                             onChange={e => setEmail(e.target.value)}
-                            placeholder="user@verity.ph"
+                            placeholder="agent@verity.ph"
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Password</label>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Password</label>
                         <input 
                             type="password" 
                             required 
                             disabled={loading}
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition disabled:opacity-50"
+                            className="w-full p-3.5 bg-slate-950 border border-slate-700 rounded-xl outline-none text-white placeholder:text-slate-600 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50"
                             value={password}
                             onChange={e => setPassword(e.target.value)}
                             placeholder="••••••••"
@@ -111,22 +97,27 @@ export const LoginPage = () => {
                     <button 
                         type="submit" 
                         disabled={loading}
-                        className={`w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-lg ${
+                        className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-lg mt-6 ${
                             loading 
-                            ? 'bg-blue-600 text-white cursor-wait' 
-                            : 'bg-gray-900 text-white hover:bg-black shadow-gray-200'
+                            ? 'bg-slate-700 text-slate-400 cursor-wait' 
+                            : 'bg-gradient-to-r from-emerald-600 to-blue-600 text-white hover:shadow-emerald-900/20 hover:scale-[1.02] active:scale-[0.98]'
                         }`}
                     >
                         {loading ? (
                             <>
                                 <Loader2 className="animate-spin" size={18} /> 
-                                {status || 'Processing...'}
+                                {status || 'Authenticating...'}
                             </>
                         ) : (
-                            <><ShieldCheck size={18} /> Sign In</>
+                            <><ShieldCheck size={18} /> INITIALIZE SESSION</>
                         )}
                     </button>
                 </form>
+
+                {/* FOOTER */}
+                <div className="mt-8 text-center">
+                    <p className="text-xs text-slate-600 font-mono">VERITY SYSTEMS v2.0 • CEBU, PH</p>
+                </div>
             </div>
         </div>
     );

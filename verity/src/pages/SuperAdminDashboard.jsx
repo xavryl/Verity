@@ -101,7 +101,7 @@ export const SuperAdminDashboard = () => {
                 to_email: inviteEmail,
                 role: inviteRole,
                 password: tempPassword,
-                login_link: "https://verity.ph/login"
+                login_link: "https://verityph.space/login"
             },
             "83x_AdtLDpl8JUSaA"  // Replace with your Public Key
           );

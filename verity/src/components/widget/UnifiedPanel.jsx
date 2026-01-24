@@ -1,20 +1,10 @@
 import { useState, useMemo, useRef } from 'react';
-import { X, MapPin, ArrowRight, Shield, Heart, GraduationCap, Bus, ShoppingBag, Moon, Layers, Activity } from 'lucide-react';
-
-// Configuration for essential categories and their display limits
-const PRIORITY_KEYS = {
-  'police': { label: 'Police Station', limit: 1 },
-  'barangay': { label: 'Barangay Hall', limit: 1 },
-  'fire': { label: 'Fire Station', limit: 1 },
-  'hospital': { label: 'Hospital', limit: 1 },
-  'clinic': { label: 'Clinic', limit: 1 },
-  'university': { label: 'College', limit: 3 }, 
-  'college': { label: 'College', limit: 3 },    
-  'school': { label: 'School', limit: 2 },     
-  'k-12': { label: 'School', limit: 2 }, 
-  'basic': { label: 'School', limit: 2 },   
-  'market': { label: 'Public Market', limit: 1 }
-};
+import { 
+    X, MapPin, ArrowRight, Activity, 
+    Banknote, Building2, Droplet, Church, Stethoscope, GraduationCap, Store, 
+    Pill, Flame, Fuel, Dumbbell, Hammer, Building, Shirt, Library, Shield, 
+    ShoppingBasket, Utensils, ShoppingCart, Dog, Droplets, Bed, Bath, Ruler, Car, Trees
+} from 'lucide-react';
 
 const getDistanceData = (lat1, lon1, lat2, lon2) => {
     if (!lat1 || !lon1 || !lat2 || !lon2) return null;
@@ -31,189 +21,224 @@ const getDistanceData = (lat1, lon1, lat2, lon2) => {
     };
 };
 
+const CATEGORIES = [
+    { id: 'atm', label: 'ATM/Bank', keywords: ['bank', 'atm'], icon: Banknote },
+    { id: 'barangay', label: 'Barangay', keywords: ['barangay'], icon: Building2 },
+    { id: 'police', label: 'Police', keywords: ['police'], icon: Shield },
+    { id: 'fire', label: 'Fire Stn', keywords: ['fire'], icon: Flame },
+    { id: 'hospital', label: 'Hospital', keywords: ['hospital'], icon: Building },
+    { id: 'clinic', label: 'Clinic', keywords: ['clinic', 'medical'], icon: Stethoscope },
+    { id: 'pharmacy', label: 'Drugstore', keywords: ['drug', 'pharmacy'], icon: Pill },
+    { id: 'school', label: 'K-12', keywords: ['school', 'elementary', 'high', 'k-12', 'basic'], icon: GraduationCap },
+    { id: 'college', label: 'College', keywords: ['college', 'university'], icon: GraduationCap },
+    // [FIXED] Updated keywords
+    { id: 'market', label: 'Market', keywords: ['public market', 'market', 'palengke'], icon: ShoppingBasket },
+    { id: 'mall', label: 'Mall', keywords: ['supermarket/mall', 'supermarket', 'mall'], icon: ShoppingCart },
+    { id: 'grocery', label: 'Convenience', keywords: ['convenience', '7-eleven', 'mart'], icon: Store },
+    { id: 'food', label: 'Dining', keywords: ['restaurant', 'cafe', 'food', 'eatery', 'grill', 'bistro'], icon: Utensils },
+    { id: 'gas', label: 'Gas Stn', keywords: ['gas', 'fuel', 'petron', 'shell', 'caltex'], icon: Fuel },
+    { id: 'gym', label: 'Gym', keywords: ['gym', 'fitness'], icon: Dumbbell },
+    { id: 'laundry', label: 'Laundry', keywords: ['laundry'], icon: Shirt },
+    { id: 'water', label: 'Water', keywords: ['water'], icon: Droplets },
+    { id: 'vet', label: 'Vet', keywords: ['vet', 'animal'], icon: Dog },
+    { id: 'church', label: 'Church', keywords: ['church', 'chapel'], icon: Church },
+    { id: 'library', label: 'Library', keywords: ['library'], icon: Library },
+    { id: 'hardware', label: 'Hardware', keywords: ['hardware'], icon: Hammer },
+    { id: 'blood', label: 'Blood Bank', keywords: ['blood'], icon: Droplet },
+    { id: 'lab', label: 'Lab', keywords: ['diagnostic', 'lab'], icon: Activity },
+    { id: 'park', label: 'Park', keywords: ['park', 'plaza', 'garden'], icon: Trees },
+];
+
+const DEFAULT_VIEW_CONFIG = {
+    'police': 1,
+    'fire': 1,
+    'hospital': 1,
+    'clinic': 1,
+    'school': 2,
+    'college': 3
+};
+
 export const UnifiedPanel = ({ 
     property, 
     essentialAmenities = [], 
-    filteredAmenities = [], 
     onClose, 
-    activeFilter, 
-    onFilterChange, 
     onAmenitySelect,
     selectedAmenity, 
     preciseData = {},
-    subTypeFilter,
-    onSubTypeSelect,
-    onTrafficClick // [NEW] Prop to trigger traffic widget
+    onTrafficClick,
+    onInquire,
+    onCategoryChange 
 }) => {
-  const isVisible = !!property;
-  const [sheetState, setSheetState] = useState('peek');
-  const [dragOffset, setDragOffset] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartY = useRef(0);
-  const sheetRef = useRef(null);
+    const isVisible = !!property;
+    const [sheetState, setSheetState] = useState('peek');
+    const [activeCategory, setActiveCategory] = useState(null); 
+    const [dragOffset, setDragOffset] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragStartY = useRef(0);
+    const sheetRef = useRef(null);
 
-  const FILTERS = [
-    { id: 'safety', label: 'Safety', icon: Shield, color: 'text-red-600', bg: 'bg-red-50', activeBg: 'bg-red-600' },
-    { id: 'health', label: 'Health', icon: Heart, color: 'text-pink-600', bg: 'bg-pink-50', activeBg: 'bg-pink-600' },
-    { id: 'education', label: 'Education', icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-50', activeBg: 'bg-blue-600' },
-    { id: 'transit', label: 'Transit', icon: Bus, color: 'text-amber-600', bg: 'bg-amber-50', activeBg: 'bg-amber-600' },
-    { id: 'living', label: 'Lifestyle', icon: ShoppingBag, color: 'text-emerald-600', bg: 'bg-emerald-50', activeBg: 'bg-emerald-600' },
-    { id: 'faith', label: 'Faith', icon: Moon, color: 'text-violet-600', bg: 'bg-violet-50', activeBg: 'bg-violet-600' },
-  ];
+    const handleCategoryClick = (catId) => {
+        const newCat = activeCategory === catId ? null : catId;
+        setActiveCategory(newCat);
+        if (onCategoryChange) onCategoryChange(newCat);
+    };
 
-  const nearbySummary = useMemo(() => {
-    if (!essentialAmenities.length || !property) return [];
-    const grouped = {};
+    const displayedAmenities = useMemo(() => {
+        if (!property || !essentialAmenities.length) return [];
 
-    essentialAmenities.forEach(amenity => {
-        const rawKey = (amenity.sub_category || amenity.name || amenity.type).toLowerCase();
-        let config = null;
-        for (const [key, val] of Object.entries(PRIORITY_KEYS)) {
-            if (rawKey.includes(key)) { config = val; break; }
-        }
+        let items = [];
 
-        if (config) {
-            const realData = preciseData[amenity.id];
-            const data = (realData && !realData.failed) 
-                ? { dist: realData.distance, walk: realData.walking, drive: realData.driving }
-                : getDistanceData(property.lat, property.lng, amenity.lat, amenity.lng);
+        if (activeCategory) {
+            const catConfig = CATEGORIES.find(c => c.id === activeCategory);
+            if (catConfig) {
+                items = essentialAmenities
+                    .filter(a => {
+                        const raw = (a.sub_category || a.type || a.name).toLowerCase();
+                        return catConfig.keywords.some(k => raw.includes(k));
+                    })
+                    .map(a => {
+                        const distInfo = getDistanceData(property.lat, property.lng, a.lat, a.lng);
+                        return { ...a, tempDist: parseFloat(distInfo?.dist || 999), displayLabel: a.name };
+                    })
+                    .sort((a, b) => a.tempDist - b.tempDist)
+                    .slice(0, 4); // Limit to 4 Nearest
+            }
+        } 
+        else {
+            Object.entries(DEFAULT_VIEW_CONFIG).forEach(([catId, limit]) => {
+                const config = CATEGORIES.find(c => c.id === catId);
+                if (!config) return;
 
-            if (!grouped[config.label]) grouped[config.label] = [];
-            grouped[config.label].push({ ...data, fullAmenity: amenity, genericLabel: config.label });
-        }
-    });
+                const matches = essentialAmenities
+                    .filter(a => config.keywords.some(k => (a.sub_category || a.type || a.name || '').toLowerCase().includes(k)))
+                    .sort((a, b) => {
+                        const distA = getDistanceData(property.lat, property.lng, a.lat, a.lng)?.dist || 999;
+                        const distB = getDistanceData(property.lat, property.lng, b.lat, b.lng)?.dist || 999;
+                        return distA - distB;
+                    })
+                    .slice(0, limit);
 
-    const finalEssentials = [];
-    Object.entries(grouped).forEach(([label, items]) => {
-        const limitConfig = Object.values(PRIORITY_KEYS).find(v => v.label === label);
-        const limit = limitConfig ? limitConfig.limit : 1;
-        items.sort((a, b) => parseFloat(a.dist) - parseFloat(b.dist)).slice(0, limit).forEach((item, index) => {
-            finalEssentials.push({
-                ...item,
-                displayLabel: limit > 1 ? `${item.genericLabel} ${index + 1}` : item.genericLabel
+                matches.forEach(m => {
+                    items.push({ ...m, displayLabel: config.label, isHighlight: true });
+                });
             });
-        });
-    });
+        }
 
-    return finalEssentials.sort((a, b) => parseFloat(a.dist) - parseFloat(b.dist));
-  }, [essentialAmenities, property, preciseData]);
+        return items.map(item => {
+            const realData = preciseData[item.id];
+            const distInfo = (realData && !realData.failed) 
+                ? { dist: realData.distance, walk: realData.walking, drive: realData.driving }
+                : getDistanceData(property.lat, property.lng, item.lat, item.lng);
+            return { ...item, ...distInfo };
+        }).sort((a, b) => parseFloat(a.dist) - parseFloat(b.dist));
 
-  const filterBreakdown = useMemo(() => {
-      if (!activeFilter || !filteredAmenities.length) return null;
-      const counts = {};
-      filteredAmenities.forEach(amenity => {
-          let label = amenity.sub_category || amenity.type;
-          label = label.charAt(0).toUpperCase() + label.slice(1);
-          counts[label] = (counts[label] || 0) + 1;
-      });
-      return Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [activeFilter, filteredAmenities]);
+    }, [property, essentialAmenities, activeCategory, preciseData]);
 
-  const handleTouchStart = (e) => { if (e.target.closest('.no-drag')) return; setIsDragging(true); dragStartY.current = e.touches[0].clientY; };
-  const handleTouchMove = (e) => { 
-    if (!isDragging) return; 
-    const offset = e.touches[0].clientY - dragStartY.current;
-    if (sheetState === 'expanded' && offset < 0) return;
-    setDragOffset(offset);
-  };
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-    if (dragOffset < -100) setSheetState('expanded');
-    else if (dragOffset > 100) sheetState === 'expanded' ? setSheetState('peek') : onClose();
-    setDragOffset(0);
-  };
+    const handleTouchStart = (e) => { if (e.target.closest('.no-drag')) return; setIsDragging(true); dragStartY.current = e.touches[0].clientY; };
+    const handleTouchMove = (e) => { 
+        if (!isDragging) return; 
+        const offset = e.touches[0].clientY - dragStartY.current;
+        if (sheetState === 'expanded' && offset < 0) return;
+        setDragOffset(offset);
+    };
+    const handleTouchEnd = () => {
+        setIsDragging(false);
+        if (dragOffset < -100) setSheetState('expanded');
+        else if (dragOffset > 100) sheetState === 'expanded' ? setSheetState('peek') : onClose();
+        setDragOffset(0);
+    };
 
-  const getTransform = () => {
-    if (typeof window !== 'undefined' && window.innerWidth >= 768) return isVisible ? 'translateX(0)' : 'translateX(-100%)';
-    if (!isVisible) return 'translateY(100%)';
-    const base = sheetState === 'peek' ? 'calc(100% - 320px)' : '0px';
-    return `translateY(calc(${base} + ${dragOffset}px))`;
-  };
+    const getTransform = () => {
+        if (typeof window !== 'undefined' && window.innerWidth >= 768) return isVisible ? 'translateX(0)' : 'translateX(-100%)';
+        if (!isVisible) return 'translateY(100%)';
+        const base = sheetState === 'peek' ? 'calc(100% - 320px)' : '0px';
+        return `translateY(calc(${base} + ${dragOffset}px))`;
+    };
 
-  if (!property && !isVisible) return null;
+    if (!property && !isVisible) return null;
 
-  return (
-    <>
-      <div className={`md:hidden absolute inset-0 bg-black/40 backdrop-blur-sm z-[1999] transition-opacity ${isVisible && sheetState === 'expanded' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setSheetState('peek')} />
-      <aside ref={sheetRef} className={`absolute z-[2000] bg-white shadow-2xl flex flex-col bottom-0 left-0 right-0 h-[92%] rounded-t-[24px] md:top-0 md:h-full md:w-[400px] md:rounded-none`} style={{ transform: getTransform(), transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-        <div className="md:hidden bg-white shrink-0 border-b border-gray-100" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-          <div className="flex justify-center pt-3 pb-1"><div className="w-12 h-1.5 bg-gray-300 rounded-full" /></div>
-          <div className="py-3 pl-6 no-drag">
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-              {FILTERS.map((chip) => (
-                <button key={chip.id} onClick={() => onFilterChange(activeFilter === chip.id ? null : chip.id)} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all shrink-0 ${activeFilter === chip.id ? `${chip.activeBg} text-white shadow-md` : `${chip.bg} border-gray-100 ${chip.color}`}`}>
-                  <chip.icon size={12} /><span className="text-[11px] font-bold">{chip.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        
-        <div className="relative h-48 md:h-64 shrink-0 bg-gray-100">
-          <img src={property?.main_image || 'https://images.unsplash.com/photo-1600596542815-e32c187f63f5?auto=format&fit=crop&q=80'} alt={property?.name} className="w-full h-full object-cover"/>
-          <button onClick={onClose} className="absolute top-5 right-5 bg-black/20 text-white p-2 rounded-full backdrop-blur-md transition-all z-20"><X size={20} /></button>
-          <div className="absolute bottom-0 left-0 right-0 p-5 text-white bg-gradient-to-t from-black/80 to-transparent">
-            <h2 className="text-xl font-bold drop-shadow-sm">{property?.name}</h2>
-            <p className="text-sm opacity-90">{property?.location}</p>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    return (
+        <>
+            <div className={`md:hidden absolute inset-0 bg-black/40 backdrop-blur-sm z-[1999] transition-opacity ${isVisible && sheetState === 'expanded' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setSheetState('peek')} />
             
-            {/* [NEW] Traffic History Button */}
-            <button 
-                onClick={onTrafficClick}
-                className="w-full flex items-center justify-between p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-800 hover:bg-emerald-100 transition-colors"
-            >
-                <div className="flex items-center gap-3">
-                    <div className="bg-emerald-200 p-2 rounded-lg">
-                        <Activity size={18} className="text-emerald-700" />
-                    </div>
-                    <div className="text-left">
-                        <span className="block text-xs font-bold uppercase tracking-wider">Traffic Insights</span>
-                        <span className="block text-[10px] opacity-80">View 24h congestion history</span>
+            <aside ref={sheetRef} className={`absolute z-[2000] bg-white shadow-2xl flex flex-col bottom-0 left-0 right-0 h-[90%] rounded-t-[24px] md:top-0 md:h-full md:w-[400px] md:rounded-none`} style={{ transform: getTransform(), transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                <div className="md:hidden bg-white shrink-0 border-b border-gray-100" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+                    <div className="flex justify-center pt-3 pb-2"><div className="w-12 h-1.5 bg-gray-300 rounded-full" /></div>
+                </div>
+                
+                <div className="relative h-48 shrink-0 bg-gray-900 group">
+                    <img src={property?.main_image || 'https://images.unsplash.com/photo-1600596542815-e32c187f63f5?auto=format&fit=crop&q=80'} alt={property?.name} className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-700"/>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                    <button onClick={onClose} className="absolute top-4 right-4 bg-white/20 text-white p-2 rounded-full backdrop-blur-md hover:bg-white/30 transition z-20"><X size={18} /></button>
+                    <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
+                        <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[10px] font-bold uppercase mb-2 tracking-wider">For Sale</span>
+                        <h2 className="text-2xl font-bold leading-tight">{property?.name}</h2>
+                        <p className="text-sm opacity-90 flex items-center gap-1"><MapPin size={12}/> {property?.location}</p>
                     </div>
                 </div>
-                <ArrowRight size={16} />
-            </button>
 
-            {activeFilter && filterBreakdown ? (
-                <div className="animate-in fade-in slide-in-from-bottom-2">
-                    <h3 className="text-xs font-bold text-gray-900 uppercase mb-3 flex items-center gap-2"><Layers size={14} className="text-emerald-500"/> Nearby Categories</h3>
-                    <div className="flex flex-wrap gap-2">
-                        {filterBreakdown.map(([type, count]) => (
-                            <button key={type} onClick={() => onSubTypeSelect(subTypeFilter === type ? null : type)} className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${subTypeFilter === type ? 'bg-gray-800 text-white shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
-                                <span className="text-sm font-bold">{count}</span>
-                                <span className="text-xs">{type}</span>
-                            </button>
-                        ))}
-                    </div>
+                <div className="grid grid-cols-4 divide-x divide-gray-100 border-b border-gray-100 bg-white shrink-0 shadow-sm relative z-10">
+                    <div className="p-3 text-center"><div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Price</div><div className="text-emerald-600 font-black text-sm">{property?.price || 'N/A'}</div></div>
+                    <div className="p-3 text-center"><div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Beds</div><div className="text-gray-900 font-bold text-sm flex justify-center items-center gap-1"><Bed size={14}/> {property?.specs?.beds || '-'}</div></div>
+                    <div className="p-3 text-center"><div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Baths</div><div className="text-gray-900 font-bold text-sm flex justify-center items-center gap-1"><Bath size={14}/> {property?.specs?.baths || '-'}</div></div>
+                    <div className="p-3 text-center"><div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Area</div><div className="text-gray-900 font-bold text-sm flex justify-center items-center gap-1"><Ruler size={14}/> {property?.specs?.sqm || '-'}m²</div></div>
                 </div>
-            ) : (
-                nearbySummary.length > 0 && (
-                    <div className="animate-in fade-in slide-in-from-bottom-2">
-                        <h3 className="text-xs font-bold text-gray-900 uppercase mb-3 flex items-center gap-2"><MapPin size={14} className="text-emerald-500"/> Essentials</h3>
+
+                <div className="flex-1 overflow-y-auto bg-gray-50/50">
+                    <div className="p-4 space-y-5">
+                        
+                        <button onClick={() => onTrafficClick && onTrafficClick(displayedAmenities)} className="w-full flex items-center justify-between p-3 bg-white border border-gray-200 rounded-xl hover:border-emerald-300 hover:shadow-md transition-all group">
+                            <div className="flex items-center gap-3"><div className="bg-emerald-100 p-2 rounded-lg text-emerald-600 group-hover:scale-110 transition-transform"><Car size={18} /></div><div className="text-left"><span className="block text-xs font-bold text-gray-900">Check Traffic</span><span className="block text-[10px] text-gray-500">View congestion heatmaps</span></div></div>
+                            <ArrowRight size={14} className="text-gray-300 group-hover:text-emerald-500 transition-colors" />
+                        </button>
+
+                        <div>
+                            <div className="flex items-center justify-between mb-2 px-1">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Nearby Places</h3>
+                                {activeCategory && (<button onClick={() => handleCategoryClick(null)} className="text-[10px] text-red-500 font-bold hover:underline">Clear Filter</button>)}
+                            </div>
+                            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
+                                {CATEGORIES.map((cat) => (
+                                    <button 
+                                        key={cat.id} 
+                                        onClick={() => handleCategoryClick(cat.id)} 
+                                        className={`flex flex-col items-center gap-1 min-w-[60px] p-2 rounded-xl transition-all border ${activeCategory === cat.id ? 'bg-gray-900 border-gray-900 text-white shadow-lg scale-105' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'}`}
+                                    >
+                                        <cat.icon size={18} />
+                                        <span className="text-[9px] font-bold whitespace-nowrap">{cat.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-2">
-                            {nearbySummary.map((stats, index) => (
-                                <button key={index} onClick={() => onAmenitySelect(stats.fullAmenity)} className={`p-3 rounded-lg border transition-all text-left ${selectedAmenity?.id === stats.fullAmenity.id ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' : 'bg-white border-gray-100 hover:border-emerald-400'}`}>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="text-[10px] font-bold truncate uppercase tracking-tight">{stats.displayLabel}</span>
-                                        <span className="text-[10px] text-emerald-600 font-bold">{stats.dist}km</span>
-                                    </div>
-                                    <div className="flex justify-between text-[9px] text-gray-400">
-                                        <span>🚶 {stats.walk}m</span>
-                                        <span>🚗 {stats.drive}m</span>
-                                    </div>
-                                </button>
-                            ))}
+                            {displayedAmenities.length > 0 ? (
+                                displayedAmenities.map((item, index) => (
+                                    <button key={`${item.id}-${index}`} onClick={() => onAmenitySelect(item)} className={`p-2.5 rounded-xl border text-left transition-all relative overflow-hidden group ${selectedAmenity?.id === item.id ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500' : 'bg-white border-gray-200 hover:border-emerald-300 hover:shadow-sm'}`}>
+                                        {item.isHighlight && <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-bl-lg">CLOSEST</div>}
+                                        <div className="mb-1 pr-4"><div className="text-xs font-bold text-gray-900 truncate">{item.displayLabel}</div><div className="text-[9px] text-gray-500 truncate">{item.name}</div></div>
+                                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                                            <div className="flex items-center gap-1 text-emerald-600"><MapPin size={10} /><span className="text-[10px] font-bold">{item.dist}km</span></div>
+                                            <div className="text-[9px] text-gray-400 font-medium">{item.drive > 0 ? `${item.drive} min 🚗` : `${item.walk} min 🚶`}</div>
+                                        </div>
+                                    </button>
+                                ))
+                            ) : (
+                                <div className="col-span-2 py-8 text-center text-gray-400 bg-white rounded-xl border border-dashed border-gray-200"><p className="text-xs">No places found in this category.</p></div>
+                            )}
+                        </div>
+
+                        <div className="bg-white p-4 rounded-xl border border-gray-200">
+                            <h3 className="text-xs font-bold text-gray-900 uppercase mb-2">About Property</h3>
+                            <p className="text-xs text-gray-600 leading-relaxed line-clamp-4 hover:line-clamp-none transition-all cursor-pointer">{property?.description || 'No description provided.'}</p>
                         </div>
                     </div>
-                )
-            )}
-            <div><h3 className="font-bold text-sm mb-2 text-gray-900">Description</h3><p className="text-sm text-gray-600 leading-relaxed">{property?.description}</p></div>
-        </div>
-        <div className="p-4 border-t bg-white shrink-0 safe-area-bottom"><button className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">Inquire Now <ArrowRight size={18} /></button></div>
-      </aside>
-    </>
-  );
+                </div>
+
+                <div className="p-4 border-t border-gray-100 bg-white shrink-0 safe-area-bottom">
+                    <button onClick={onInquire} className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-black active:scale-95 transition-all shadow-lg shadow-gray-200">Inquire Now <ArrowRight size={18} /></button>
+                </div>
+            </aside>
+        </>
+    );
 };
