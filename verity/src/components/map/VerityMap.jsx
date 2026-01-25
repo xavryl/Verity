@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom'; // <--- ADDED THIS IMPORT
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -9,7 +10,7 @@ import { TrafficWidget } from '../widget/TrafficWidget';
 import { InquiryModal } from '../widget/InquiryModal'; 
 import { fetchRoute, MapInvalidator, getDistanceKm } from './map_functions/mapUtils';
 
-// --- STYLES (Unchanged as requested) ---
+// --- STYLES ---
 const ANIMATION_STYLE = `
   @keyframes dash-animation { to { stroke-dashoffset: -30; } }
   .marching-ants {
@@ -18,7 +19,7 @@ const ANIMATION_STYLE = `
     stroke: #3b82f6 !important;
     stroke-width: 5px !important;
   }
-  .leaflet-marker-icon { transition: none !important; }
+  .leaflet-marker-icon { transition: width 0.3s, height 0.3s, margin 0.3s; }
 `;
 
 const estimateTime = (distKm) => {
@@ -46,7 +47,7 @@ const AMENITY_ICONS = {
     'police': 'police station.svg', 
     'market': 'public market.svg', 'restaurant': 'restaurant.svg', 
     'sports': 'sports complex.svg',
-    'mall': 'mall.svg', 'supermarket': 'mall.svg', // Maps Urban/Mall to mall.svg
+    'mall': 'mall.svg', 'supermarket': 'mall.svg',
     'vet': 'vet clinic.svg', 
     'water': 'water refilling station.svg', 
     'post': 'post office.svg'
@@ -54,22 +55,17 @@ const AMENITY_ICONS = {
 
 const iconCache = {};
 
-// --- UPDATED ICON GETTER (Handles resizing) ---
+// --- ICON GETTER ---
 const getAmenityIcon = (sub_category, type, isHovered = false, isHighlighted = false) => {
     const keySub = (sub_category || "").toString().trim().toLowerCase();
     const keyType = (type || "").toString().trim().toLowerCase();
     
-    // Find matching icon
     const match = Object.keys(AMENITY_ICONS).find(k => keySub.includes(k) || keyType.includes(k));
     const fileName = AMENITY_ICONS[match] || 'clinic.svg';
     
-    // Unique cache key for highlighted state
     const cacheKey = `${fileName}_${isHovered}_${isHighlighted}`;
     if (iconCache[cacheKey]) return iconCache[cacheKey];
 
-    // SIZE LOGIC: 
-    // Normal: [42, 52]
-    // Highlighted (Quiz Match): [65, 75] -> ENLARGED
     const size = isHighlighted ? [65, 75] : (isHovered ? [52, 62] : [42, 52]); 
     
     const icon = new L.Icon({
@@ -99,7 +95,14 @@ const MapController = ({ targetCoords }) => {
     return null;
 };
 
-export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
+export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
+    // --- FIX 1: Read URL Search Params directly ---
+    const [searchParams] = useSearchParams();
+    const urlMapId = searchParams.get('map_id');
+    
+    // Priority: Prop ID -> URL ID -> null
+    const activeMapId = mapId || map_id || urlMapId;
+
     const [properties, setProperties] = useState([]);
     const [allAmenities, setAllAmenities] = useState([]); 
     const [selectedProp, setSelectedProp] = useState(null);
@@ -109,11 +112,8 @@ export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
     const [activePanelFilter, setActivePanelFilter] = useState(null); 
     const [routeData, setRouteData] = useState(null);
     const [preciseData, setPreciseData] = useState({});
-    
-    // NEW: Track IDs of amenities to Enlarge
     const [highlightedAmenityIds, setHighlightedAmenityIds] = useState([]);
 
-    // States
     const [showTraffic, setShowTraffic] = useState(false);
     const [trafficDestinations, setTrafficDestinations] = useState([]); 
     const [trafficPins, setTrafficPins] = useState([]); 
@@ -128,19 +128,32 @@ export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
         return () => { document.head.removeChild(style); };
     }, []);
 
-    // --- DATA LOADING ---
+    // --- DATA LOADING (FIXED LOGIC) ---
     useEffect(() => {
         const loadData = async () => {
+            setProperties([]); // Clear ghosts
+            
             let query = supabase.from('properties').select('*').neq('status', 'sold');
-            if (showOwnerData && userId) query = query.eq('user_id', userId);
-            else if (propMapId) query = query.eq('map_id', propMapId);
+            
+            // --- FIX 2: Strict Priority Logic ---
+            if (activeMapId) {
+                // If a map ID exists (from URL or Props), ONLY load that map.
+                // This prevents "showOwnerData" from accidentally flooding the map with other projects.
+                query = query.eq('map_id', activeMapId);
+                console.log("Loading Specific Map:", activeMapId);
+            } else if (showOwnerData && userId) {
+                // Only fall back to "Show All My Properties" if NO map ID is specified.
+                query = query.eq('user_id', userId);
+                console.log("Loading All Owner Properties");
+            }
+
             const { data: props } = await query;
             if (props) {
                 setProperties(props);
                 if (props.length > 0 && !selectedProp) setMapTarget([props[0].lat, props[0].lng]);
             }
 
-            // Unlimited Amenities Load
+            // Amenities loading...
             let allRows = [];
             let from = 0;
             const step = 1000;
@@ -155,11 +168,10 @@ export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
                     if (data.length < step) more = false;
                 }
             }
-            console.log(`✅ Loaded ${allRows.length} amenities`);
             setAllAmenities(allRows);
         };
         loadData();
-    }, [propMapId, userId, showOwnerData]);
+    }, [activeMapId, userId, showOwnerData]);
 
     // --- DB MAPPING ---
     const DB_MAPPING = useMemo(() => ({
@@ -206,13 +218,8 @@ export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
             return { ...a, _sub: rawSub, _type: rawType, dist: d, ...estimateTime(d) };
         }).sort((a, b) => a.dist - b.dist);
 
-        // 1. ALWAYS show Highlighted Pins (from Quiz)
-        // This ensures the Mall pin appears even if filter is different
         if (highlightedAmenityIds.length > 0) {
             const highPins = sorted.filter(a => highlightedAmenityIds.includes(a.id));
-            
-            // Optionally add other filtered pins if needed, but for "Focus Mode", showing relevant ones is cleaner
-            // Let's mix them: Show Highlights + Active Filter (if any)
             let otherPins = [];
             if (activePanelFilter) {
                 const validTargets = DB_MAPPING[activePanelFilter] || [];
@@ -221,15 +228,13 @@ export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
                     !highlightedAmenityIds.includes(a.id)
                 ).slice(0, 3);
             }
-            return [...highPins, ...otherPins];
+            return [...highPins, ...otherPins].filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
         }
 
-        // 2. Normal Filtering Mode
         if (activePanelFilter) {
             const validTargets = DB_MAPPING[activePanelFilter] || [];
             return sorted.filter(a => validTargets.some(t => a._sub.includes(t) || a._type.includes(t))).slice(0, 4);
         } else {
-            // Default View
             const DEFAULTS = { 'police': 1, 'fire': 1, 'hospital': 1, 'clinic': 1, 'school': 2, 'college': 3 };
             const results = [];
             const usedIds = new Set();
@@ -256,71 +261,52 @@ export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
 
     // --- QUIZ HANDLER ---
     const handlePropSelect = (prop, quizTags = []) => {
-        // 1. Reset
         setSelectedProp(prop); 
         setPreciseData({}); 
         setRouteData(null); 
         setActivePanelFilter(null); 
         setMapTarget([prop.lat, prop.lng]); 
-        setHighlightedAmenityIds([]); // Clear old highlights
+        setHighlightedAmenityIds([]); 
 
-        // 2. Process Quiz Tags
         if (quizTags && quizTags.length > 0 && allAmenities.length > 0) {
-            
-            // Map Quiz Persona -> UnifiedPanel Category Key
             const QUIZ_TO_PANEL = {
-                'fitness': 'gym', 
-                'student': 'school', 
-                'family': 'park', 
-                'pets': 'vet', 
-                'safety': 'police', 
-                'convenience': 'mall' // Maps "Urban" -> "Mall"
+                'fitness': 'gym', 'student': 'school', 'family': 'park', 
+                'pets': 'vet', 'safety': 'police', 'convenience': 'mall' 
             };
 
             let foundIds = [];
             let primaryAmenity = null;
 
-            // Loop through selected tags (e.g. ['convenience', 'fitness'])
             quizTags.forEach((tag, idx) => {
                 const catKey = QUIZ_TO_PANEL[tag];
                 if (!catKey) return;
 
-                // Find valid DB keywords for this category
                 const validTargets = DB_MAPPING[catKey] || [];
-
-                // Find NEAREST amenity for THIS category relative to THIS property
                 const nearest = allAmenities
                     .map(a => {
                         const rawSub = (a.sub_category || "").toString().trim().toLowerCase();
                         const rawType = (a.type || "").toString().trim().toLowerCase();
-                        
-                        // Check fuzzy match
                         const isMatch = validTargets.some(t => rawSub.includes(t) || rawType.includes(t));
                         if (!isMatch) return null;
-                        
                         const d = getDistanceKm(prop.lat, prop.lng, a.lat, a.lng);
                         return { ...a, dist: d };
                     })
                     .filter(Boolean)
-                    .sort((a, b) => a.dist - b.dist)[0]; // Closest one
+                    .sort((a, b) => a.dist - b.dist)[0];
 
                 if (nearest) {
                     foundIds.push(nearest.id);
-                    // First tag determines the route line
                     if (idx === 0) {
                         primaryAmenity = nearest;
-                        setActivePanelFilter(catKey); // Sync side panel
+                        setActivePanelFilter(catKey); 
                     }
                 }
             });
 
-            // 3. Update State to Enlarge these pins
             if (foundIds.length > 0) {
                 setHighlightedAmenityIds(foundIds);
-                console.log(`[Quiz] Highlighting amenities:`, foundIds);
             }
 
-            // 4. Draw route to the primary match
             if (primaryAmenity) {
                 setTimeout(() => handleAmenityClick(primaryAmenity), 600);
             }
@@ -341,14 +327,11 @@ export const VerityMap = ({ mapId: propMapId, userId, showOwnerData }) => {
                 ))}
 
                 {visiblePins.map(amen => {
-                    // Check if this specific amenity should be enlarged
                     const isHigh = highlightedAmenityIds.includes(amen.id);
-                    
                     return (
                         <Marker 
                             key={`amenity-${amen.id}`} 
                             position={[amen.lat, amen.lng]} 
-                            // Pass isHighlighted=true to enlarge icon
                             icon={getAmenityIcon(amen.sub_category, amen.type, hoveredAmenityId === amen.id || selectedAmenity?.id === amen.id, isHigh)}
                             zIndexOffset={isHigh || selectedAmenity?.id === amen.id ? 1000 : 0}
                             eventHandlers={{ 

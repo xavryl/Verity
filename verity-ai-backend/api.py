@@ -251,6 +251,7 @@ def predict_traffic(req: TrafficRequest):
 # --- INTELLIGENT MATCHING LOGIC ---
 
 class UserPreference(BaseModel):
+    filter_map_id: str | None = None  # <--- UPDATED: To handle filtering by Map ID
     personas: list[str]
     safety_priority: float
     health_priority: float
@@ -260,10 +261,22 @@ class UserPreference(BaseModel):
 @app.post("/recommend")
 def recommend(pref: UserPreference):
     if PROPERTY_BRAIN.empty: return {"matches": []}
+    
+    # --- FIX: FILTER BRAIN BY MAP ID ---
+    active_brain = PROPERTY_BRAIN
+    if pref.filter_map_id:
+        if 'map_id' in active_brain.columns:
+            active_brain = active_brain[active_brain['map_id'] == pref.filter_map_id]
+        else:
+            # Fallback for old data without map_id
+            print("⚠️ Warning: 'map_id' column not found in Property Brain")
+    
+    if active_brain.empty: return {"matches": []}
+
     results = []
     
-    # Pass user personas to the scoring function so it knows what to prioritize
-    for _, row in PROPERTY_BRAIN.iterrows():
+    # Use 'active_brain' (filtered) instead of global PROPERTY_BRAIN
+    for _, row in active_brain.iterrows():
         scores, metadata = score_property(row['lat'], row['lng'], pref.personas)
         
         total = (
@@ -320,8 +333,6 @@ def score_property(prop_lat, prop_lng, personas=[]):
         
         if found_category:
             # 2. APPLY PERSONA BOOST
-            # If user wants "Fitness" and this is a "Gym", multiply score by 3x
-            # and mark it as a priority match.
             is_priority_match = False
             for p in personas:
                 if p in PERSONA_BOOSTS and any(boost in raw_text for boost in PERSONA_BOOSTS[p]):
@@ -331,16 +342,14 @@ def score_property(prop_lat, prop_lng, personas=[]):
             scores[found_category] += impact
 
             # 3. METADATA UPDATE LOGIC
-            # If we don't have metadata yet, OR if this is closer, OR if this is a Priority Match (and the previous wasn't)
             current_meta = metadata.get(found_category)
-            
             should_update = False
             if not current_meta:
                 should_update = True
             elif is_priority_match and not current_meta.get('priority'):
-                should_update = True # Overwrite generic item with specific match (e.g. Vet replaces Dentist)
+                should_update = True 
             elif is_priority_match == current_meta.get('priority', False) and dist_km < current_meta['dist']:
-                should_update = True # Both are same priority level, but this one is closer
+                should_update = True 
 
             if should_update:
                 metadata[found_category] = {
@@ -357,7 +366,6 @@ def generate_copy(personas, metadata):
     grammar.add_modifiers(base_english)
     
     # Smart Copy Generation
-    # Pick the metadata category that matches the most important persona
     target = 'lifestyle' # Default
     if 'fitness' in personas and 'lifestyle' in metadata and metadata['lifestyle'].get('priority'): target = 'lifestyle'
     elif 'pets' in personas and 'health' in metadata and metadata['health'].get('priority'): target = 'health'

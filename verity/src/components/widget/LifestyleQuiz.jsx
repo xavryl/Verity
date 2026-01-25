@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom'; // 1. Import to read URL
 import { 
     Sparkles, X, Dumbbell, Dog, GraduationCap, ShieldCheck, 
     ShoppingBag, BrainCircuit, ArrowRight, RotateCcw, Loader2, Quote, Check,
@@ -6,6 +7,10 @@ import {
 } from 'lucide-react';
 
 export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSelect }) => {
+    // 2. Get the specific Project ID from the URL
+    const [searchParams] = useSearchParams();
+    const activeMapId = searchParams.get('map_id'); 
+
     const [isOpen, setIsOpen] = useState(true);
     const [step, setStep] = useState('quiz');
     const [selectedTags, setSelectedTags] = useState([]); 
@@ -13,7 +18,13 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
     const [activeIndex, setActiveIndex] = useState(0);
     const [isTransitioning, setIsTransitioning] = useState(false);
 
-    // Profile Definitions
+    // 3. STRICT FILTERING: Ensure this widget ONLY sees properties for this specific Map ID
+    // This protects User A from seeing User B's properties, even if the parent passes them.
+    const activeProperties = useMemo(() => {
+        if (!activeMapId) return properties;
+        return properties.filter(p => p.map_id === activeMapId);
+    }, [properties, activeMapId]);
+
     const PROFILES = [
         { id: 'student', label: 'Student', icon: BookOpen, color: 'text-pink-600', bg: 'bg-pink-50' },
         { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-600', bg: 'bg-green-50' },
@@ -30,7 +41,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
         } else {
             if (selectedTags.length < 4) {
                 newTags = [...selectedTags, id];
-                // --- NEW: Trigger visual map update immediately ---
                 if (onPersonaSelect) onPersonaSelect(id); 
             } else {
                 newTags = selectedTags;
@@ -41,9 +51,18 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
 
     const runAnalysis = async () => {
         if (selectedTags.length === 0) return;
+        
+        // Safety: If this specific map has no properties, don't bother the AI
+        if (activeProperties.length === 0) {
+            alert("No properties found for this specific project.");
+            return;
+        }
+
         setStep('loading');
 
         const payload = {
+            // 4. Send the Map ID to the AI so it knows which "Bucket" to search
+            filter_map_id: activeMapId, 
             personas: selectedTags, 
             safety_priority: (selectedTags.includes('safety') || selectedTags.includes('family')) ? 1.0 : 0.0,
             education_priority: (selectedTags.includes('family') || selectedTags.includes('student')) ? 1.0 : 0.0,
@@ -52,7 +71,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
         };
 
         try {
-            // Ensure this points to your running backend
+            // This URL stays the same for ALL 100 users. It is a shared service.
             const API_URL = 'https://verity-ai.onrender.com'; 
             
             const response = await fetch(`${API_URL}/recommend`, {
@@ -64,9 +83,14 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
             if (!response.ok) throw new Error("AI Server Error");
             const data = await response.json();
             
+            // 5. SECURITY FILTER:
+            // Even if the AI makes a mistake and returns a property from Map 1,
+            // we filter strictly against 'activeProperties' (Map 2) to ensure it is never displayed.
             const enrichedMatches = data.matches.map(match => {
-                const realProp = properties.find(p => String(p.id) === String(match.id));
-                if (!realProp) return null;
+                // We only look for the ID inside 'activeProperties'
+                const realProp = activeProperties.find(p => String(p.id) === String(match.id));
+                
+                if (!realProp) return null; // Discard if it belongs to a different map
                 return { ...match, ...realProp }; 
             }).filter(Boolean);
 
@@ -77,15 +101,20 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
                 if (onRecommend) onRecommend(enrichedMatches[0]);
                 setStep('result');
             } else {
-                alert("No properties found matching criteria.");
-                setStep('quiz');
+                // Fallback: If AI returned nothing valid for this map, show local properties
+                console.log("AI returned no valid matches for this map ID. Showing default map properties.");
+                setMatches(activeProperties);
+                setActiveIndex(0);
+                if (onRecommend) onRecommend(activeProperties[0]);
+                setStep('result');
             }
         } catch (err) {
             console.error(err);
-            // Fallback for demo if backend is offline
-            if(properties.length > 0) {
-                 setMatches([properties[0]]);
+            // Fallback for offline mode using ONLY this map's properties
+            if(activeProperties.length > 0) {
+                 setMatches(activeProperties);
                  setStep('result');
+                 if (onRecommend) onRecommend(activeProperties[0]);
             } else {
                 setStep('quiz');
             }
@@ -117,7 +146,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
 
     return (
         <div className="absolute top-4 right-4 z-[1000] w-[340px] bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 overflow-hidden animate-in fade-in zoom-in duration-300 font-sans pointer-events-auto flex flex-col max-h-[85vh]">
-            
             <div className="bg-gradient-to-r from-violet-700 to-indigo-700 p-4 text-white flex justify-between items-center shrink-0">
                 <div>
                     <h3 className="font-bold text-sm flex items-center gap-2">
@@ -169,11 +197,11 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
                         <div key={activeIndex} className={`bg-violet-50 border border-violet-100 rounded-xl p-4 relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-2 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
                             <Quote size={20} className="absolute -top-2 -left-2 text-violet-200 fill-violet-200 bg-white rounded-full p-0.5 border border-violet-100" />
                             <h5 className="text-violet-800 font-bold text-sm mb-1">{activeMatch.headline || activeMatch.name}</h5>
-                            <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body || activeMatch.description?.substring(0, 100)}..."</p>
+                            <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body || activeMatch.description?.substring(0, 100) || "Great match for your lifestyle."}..."</p>
                             <div className="flex flex-wrap gap-1.5">
                                 {activeMatch.highlights?.map((h, i) => (
                                     <span key={i} className="text-[9px] bg-white border border-violet-100 px-2 py-1 rounded-md text-violet-600 shadow-sm animate-in fade-in zoom-in duration-500">
-                                        {h.split('(')[0]}
+                                        {h.split ? h.split('(')[0] : h}
                                     </span>
                                 ))}
                             </div>

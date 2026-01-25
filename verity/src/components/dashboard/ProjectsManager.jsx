@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
-import { Map, Plus, Trash2, Edit2, Copy, ExternalLink, FolderOpen, Code, X, List, Fingerprint } from 'lucide-react'; 
+import { Map, Plus, Trash2, Edit2, Copy, ExternalLink, Code, X, List, Fingerprint } from 'lucide-react'; 
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { WidgetBuilder } from './WidgetBuilder'; 
@@ -14,7 +14,7 @@ const Toast = Swal.mixin({
     showConfirmButton: false,
     timer: 2000,
     timerProgressBar: false,
-    background: '#1e293b', // Dark Toast
+    background: '#1e293b',
     color: '#fff',
     didOpen: (toast) => {
         toast.addEventListener('mouseenter', Swal.stopTimer)
@@ -58,19 +58,14 @@ export const ProjectsManager = ({ profile }) => {
             showCancelButton: true,
             confirmButtonText: 'Create',
             cancelButtonText: 'Cancel',
-            // --- STYLING FIXES ---
-            background: '#1e293b', // Dark background
-            color: '#fff',         // White title/label text
-            buttonsStyling: false, // Disable default SweetAlert styles to use Tailwind
+            background: '#1e293b', 
+            color: '#fff',        
+            buttonsStyling: false, 
             customClass: {
-                // Input field styling: Light gray background, white text
                 input: 'bg-gray-700 text-white border-gray-600 focus:ring-emerald-500 focus:border-emerald-500 rounded-lg p-2 mt-2',
-                // Label styling
                 inputLabel: 'text-gray-300 font-bold',
-                // Button styling: Visible and matching your theme
                 confirmButton: 'bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-700 mx-2 transition',
                 cancelButton: 'bg-gray-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-gray-700 mx-2 transition',
-                // Popup container
                 popup: 'rounded-xl border border-gray-700 shadow-2xl'
             },
             inputValidator: (value) => {
@@ -150,9 +145,11 @@ export const ProjectsManager = ({ profile }) => {
         Toast.fire({ icon: 'success', title: `Copied ID: ${shortId}` });
     };
 
+    // --- FIX IS HERE ---
     if (managingProject) {
         return (
             <PropertyManager 
+                key={managingProject.id} // <--- THIS LINE IS CRITICAL. It forces a reset.
                 projectId={managingProject.id} 
                 onBack={() => setManagingProject(null)} 
             />
@@ -276,7 +273,11 @@ export const ProjectsManager = ({ profile }) => {
                         </button>
                     </div>
                     <div className="flex-1 overflow-hidden bg-slate-950">
-                        <WidgetBuilder profile={profile} preSelectedMapId={builderProject.id} />
+                        <WidgetBuilder 
+                            key={builderProject.id} // <--- Fixes builder state too
+                            profile={profile} 
+                            preSelectedMapId={builderProject.id} 
+                        />
                     </div>
                 </div>
             )}
