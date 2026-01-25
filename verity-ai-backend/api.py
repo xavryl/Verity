@@ -218,6 +218,18 @@ async def queue_update(req: QueueRequest):
 def check_status(job_id: str):
     return {"status": JOB_STATUS.get(job_id, "queuing")}
 
+# NEW: Manual refresh endpoint if Supabase data changes
+@app.post("/refresh-properties")
+def refresh_properties():
+    global PROPERTY_BRAIN
+    try:
+        resp = supabase.table('properties').select("*").execute()
+        PROPERTY_BRAIN = pd.DataFrame(resp.data)
+        save_backup_to_cloud('properties.pkl', PROPERTY_BRAIN)
+        return {"status": "Properties Refreshed", "count": len(PROPERTY_BRAIN)}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/train-traffic")
 def train_traffic():
     train_traffic_model()
@@ -262,7 +274,7 @@ class UserPreference(BaseModel):
 def recommend(pref: UserPreference):
     if PROPERTY_BRAIN.empty: return {"matches": []}
     
-    # --- FIX: FILTER BRAIN BY MAP ID ---
+    # --- FILTER BRAIN BY MAP ID ---
     active_brain = PROPERTY_BRAIN
     if pref.filter_map_id:
         if 'map_id' in active_brain.columns:
@@ -286,7 +298,9 @@ def recommend(pref: UserPreference):
             (pref.lifestyle_priority * scores.get('lifestyle', 0))
         )
         
-        if total > 0.1:
+        # FIX: Allow matches with score 0 if we are filtering by a specific map
+        # This ensures isolated maps (Map 1) still return results for description generation
+        if total > 0.1 or pref.filter_map_id:
             headline, body = generate_copy(pref.personas, metadata)
             results.append({
                 "id": str(row['id']),
@@ -301,11 +315,6 @@ def recommend(pref: UserPreference):
     return {"matches": results[:10], "matched_ids": [r['id'] for r in results[:10]]}
 
 def score_property(prop_lat, prop_lng, personas=[]):
-    """
-    Intelligent Scoring:
-    Calculates score based on distance, BUT gives huge bonus if the amenity 
-    matches the specific needs of the user's persona (e.g. 'Gym' for 'Fitness').
-    """
     if not AMENITY_BRAIN: return {}, {}
     radius_rad = 3.0 / 6371.0 # Search within 3km
     indices = AMENITY_BRAIN["tree"].query_radius([[np.radians(prop_lat), np.radians(prop_lng)]], r=radius_rad)[0]
@@ -318,13 +327,9 @@ def score_property(prop_lat, prop_lng, personas=[]):
     
     for _, amen in nearby.iterrows():
         dist_km = geodesic((prop_lat, prop_lng), (amen['lat'], amen['lng'])).km
-        
-        # Base Impact Score (Closer = Higher)
         impact = 1 / (dist_km + 0.5) 
-        
         raw_text = str(amen['sub_category'] or amen['type'] or amen['name']).lower()
         
-        # 1. CATEGORIZE THE AMENITY
         found_category = None
         for cat, keywords in CATEGORIES.items():
             if any(k in raw_text for k in keywords):
@@ -332,16 +337,14 @@ def score_property(prop_lat, prop_lng, personas=[]):
                 break
         
         if found_category:
-            # 2. APPLY PERSONA BOOST
             is_priority_match = False
             for p in personas:
                 if p in PERSONA_BOOSTS and any(boost in raw_text for boost in PERSONA_BOOSTS[p]):
-                    impact *= 3.0 # HUGE BONUS
+                    impact *= 3.0 
                     is_priority_match = True
             
             scores[found_category] += impact
 
-            # 3. METADATA UPDATE LOGIC
             current_meta = metadata.get(found_category)
             should_update = False
             if not current_meta:
@@ -365,6 +368,10 @@ def generate_copy(personas, metadata):
     grammar = tracery.Grammar(grammar_source)
     grammar.add_modifiers(base_english)
     
+    # If no metadata (no amenities found), return safe default
+    if not metadata:
+        return "Great Location", "A perfectly connected home in a peaceful area."
+
     # Smart Copy Generation
     target = 'lifestyle' # Default
     if 'fitness' in personas and 'lifestyle' in metadata and metadata['lifestyle'].get('priority'): target = 'lifestyle'

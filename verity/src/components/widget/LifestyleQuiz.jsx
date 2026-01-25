@@ -29,10 +29,11 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend, onFilter, on
     const [activeIndex, setActiveIndex] = useState(0);
     const [isTransitioning, setIsTransitioning] = useState(false);
 
-    // Filter properties for the active map
+    // Filter properties for the active map (Type Safe)
     const activeProperties = useMemo(() => {
         if (!activeMapId) return properties;
-        return properties.filter(p => p.map_id === activeMapId);
+        // FIX: String comparison for safety
+        return properties.filter(p => String(p.map_id) === String(activeMapId));
     }, [properties, activeMapId]);
 
     const PROFILES = [
@@ -115,10 +116,16 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend, onFilter, on
              smartBody = "This property aligns perfectly with your selected location priorities.";
         }
 
+        // Ensure headline exists even if description was fine but headline missing
+        if (!smartHeadline && !property.headline) {
+             const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Verified';
+             smartHeadline = `${mainTag} Recommended`;
+        }
+
         return {
             ...property,
-            headline: smartHeadline,
-            body: smartBody,
+            headline: smartHeadline || property.headline,
+            body: smartBody || property.description,
             highlights: property.highlights || tags
         };
     };
