@@ -5,7 +5,7 @@ import {
     BookOpen
 } from 'lucide-react';
 
-export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
+export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSelect }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [step, setStep] = useState('quiz');
     const [selectedTags, setSelectedTags] = useState([]); 
@@ -24,18 +24,25 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
     ];
 
     const toggleTag = (id) => {
+        let newTags;
         if (selectedTags.includes(id)) {
-            setSelectedTags(selectedTags.filter(t => t !== id));
+            newTags = selectedTags.filter(t => t !== id);
         } else {
-            if (selectedTags.length < 4) setSelectedTags([...selectedTags, id]);
+            if (selectedTags.length < 4) {
+                newTags = [...selectedTags, id];
+                // --- NEW: Trigger visual map update immediately ---
+                if (onPersonaSelect) onPersonaSelect(id); 
+            } else {
+                newTags = selectedTags;
+            }
         }
+        setSelectedTags(newTags);
     };
 
     const runAnalysis = async () => {
         if (selectedTags.length === 0) return;
         setStep('loading');
 
-        // Logic Mapping: Ensure 'fitness' triggers 'lifestyle_priority'
         const payload = {
             personas: selectedTags, 
             safety_priority: (selectedTags.includes('safety') || selectedTags.includes('family')) ? 1.0 : 0.0,
@@ -45,8 +52,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
         };
 
         try {
-            // CHANGE THIS URL to your local backend to test the fix!
-            // If you deploy the new python code, change this back to 'https://verity-ai.onrender.com'
+            // Ensure this points to your running backend
             const API_URL = 'https://verity-ai.onrender.com'; 
             
             const response = await fetch(`${API_URL}/recommend`, {
@@ -58,7 +64,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
             if (!response.ok) throw new Error("AI Server Error");
             const data = await response.json();
             
-            // Enrich AI results with real property images/prices from your frontend list
             const enrichedMatches = data.matches.map(match => {
                 const realProp = properties.find(p => String(p.id) === String(match.id));
                 if (!realProp) return null;
@@ -77,8 +82,13 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
             }
         } catch (err) {
             console.error(err);
-            alert("Ensure your local backend (main.py) is running on port 8000.");
-            setStep('quiz');
+            // Fallback for demo if backend is offline
+            if(properties.length > 0) {
+                 setMatches([properties[0]]);
+                 setStep('result');
+            } else {
+                setStep('quiz');
+            }
         }
     };
 
@@ -97,7 +107,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
 
     const activeMatch = matches[activeIndex];
 
-    // Minimized State (Button)
     if (!isOpen) {
         return (
             <button onClick={() => setIsOpen(true)} className="absolute top-4 right-4 z-[1000] bg-white text-gray-900 px-4 py-2.5 rounded-full shadow-xl font-bold text-xs flex items-center gap-2 hover:scale-105 transition-transform border border-gray-100">
@@ -106,11 +115,9 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
         );
     }
 
-    // Expanded State (Modal)
     return (
         <div className="absolute top-4 right-4 z-[1000] w-[340px] bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 overflow-hidden animate-in fade-in zoom-in duration-300 font-sans pointer-events-auto flex flex-col max-h-[85vh]">
             
-            {/* Header */}
             <div className="bg-gradient-to-r from-violet-700 to-indigo-700 p-4 text-white flex justify-between items-center shrink-0">
                 <div>
                     <h3 className="font-bold text-sm flex items-center gap-2">
@@ -122,8 +129,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
             </div>
 
             <div className="p-5 overflow-y-auto custom-scrollbar">
-                
-                {/* Step 1: The Quiz */}
                 {step === 'quiz' && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                         <h4 className="text-sm font-bold text-gray-800 mb-1">What fits your lifestyle?</h4>
@@ -151,7 +156,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
                     </div>
                 )}
 
-                {/* Step 2: Loading State */}
                 {step === 'loading' && (
                     <div className="py-12 text-center animate-pulse">
                         <Loader2 size={36} className="text-violet-600 animate-spin mx-auto mb-4" />
@@ -160,21 +164,14 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
                     </div>
                 )}
 
-                {/* Step 3: Results */}
                 {step === 'result' && activeMatch && (
                     <div className="flex flex-col gap-4">
-                        
-                        {/* Selected Match Card */}
-                        <div 
-                            key={activeIndex} 
-                            className={`bg-violet-50 border border-violet-100 rounded-xl p-4 relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-2 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}
-                        >
+                        <div key={activeIndex} className={`bg-violet-50 border border-violet-100 rounded-xl p-4 relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-2 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
                             <Quote size={20} className="absolute -top-2 -left-2 text-violet-200 fill-violet-200 bg-white rounded-full p-0.5 border border-violet-100" />
-                            <h5 className="text-violet-800 font-bold text-sm mb-1">{activeMatch.headline}</h5>
-                            <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body}"</p>
-                            
+                            <h5 className="text-violet-800 font-bold text-sm mb-1">{activeMatch.headline || activeMatch.name}</h5>
+                            <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body || activeMatch.description?.substring(0, 100)}..."</p>
                             <div className="flex flex-wrap gap-1.5">
-                                {activeMatch.highlights.map((h, i) => (
+                                {activeMatch.highlights?.map((h, i) => (
                                     <span key={i} className="text-[9px] bg-white border border-violet-100 px-2 py-1 rounded-md text-violet-600 shadow-sm animate-in fade-in zoom-in duration-500">
                                         {h.split('(')[0]}
                                     </span>
@@ -182,22 +179,15 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter }) => {
                             </div>
                         </div>
 
-                        {/* List of Other Matches */}
                         <div className="animate-in fade-in duration-700 delay-150">
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Top {matches.length} Matches</p>
                             <div className="flex flex-col gap-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
                                 {matches.map((match, idx) => (
-                                    <button 
-                                        key={match.id}
-                                        onClick={() => handleSelectMatch(idx)}
-                                        className={`flex items-center gap-3 p-2 rounded-lg border text-left transition-all duration-200 ${idx === activeIndex ? 'bg-gray-900 text-white border-gray-900 shadow-md ring-1 ring-gray-900' : 'bg-white text-gray-600 border-gray-100 hover:bg-gray-50'}`}
-                                    >
-                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-colors ${idx === activeIndex ? 'bg-white text-gray-900' : 'bg-gray-100 text-gray-500'}`}>
-                                            #{idx + 1}
-                                        </div>
+                                    <button key={match.id} onClick={() => handleSelectMatch(idx)} className={`flex items-center gap-3 p-2 rounded-lg border text-left transition-all duration-200 ${idx === activeIndex ? 'bg-gray-900 text-white border-gray-900 shadow-md ring-1 ring-gray-900' : 'bg-white text-gray-600 border-gray-100 hover:bg-gray-50'}`}>
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-colors ${idx === activeIndex ? 'bg-white text-gray-900' : 'bg-gray-100 text-gray-500'}`}>#{idx + 1}</div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-[11px] font-bold truncate">{match.name}</p>
-                                            <p className={`text-[9px] truncate ${idx === activeIndex ? 'text-gray-300' : 'text-gray-400'}`}>{match.headline}</p>
+                                            <p className={`text-[9px] truncate ${idx === activeIndex ? 'text-gray-300' : 'text-gray-400'}`}>{match.headline || 'Recommended'}</p>
                                         </div>
                                         {idx === activeIndex && <ArrowRight size={12} className="shrink-0 animate-in slide-in-from-left-2" />}
                                     </button>

@@ -49,17 +49,30 @@ export const ProjectsManager = ({ profile }) => {
     }, [user]);
 
     // Create New Map
-    const createMap = async () => {
+   const createMap = async () => {
         const { value: name } = await Swal.fire({
             title: 'New Project Name',
             input: 'text',
             inputLabel: 'Project Name',
             inputPlaceholder: 'e.g., Cebu Business Park',
             showCancelButton: true,
-            confirmButtonColor: '#10b981',
-            background: '#1e293b',
-            color: '#fff',
-            customClass: { input: 'text-gray-900' }, // Input needs to be readable
+            confirmButtonText: 'Create',
+            cancelButtonText: 'Cancel',
+            // --- STYLING FIXES ---
+            background: '#1e293b', // Dark background
+            color: '#fff',         // White title/label text
+            buttonsStyling: false, // Disable default SweetAlert styles to use Tailwind
+            customClass: {
+                // Input field styling: Light gray background, white text
+                input: 'bg-gray-700 text-white border-gray-600 focus:ring-emerald-500 focus:border-emerald-500 rounded-lg p-2 mt-2',
+                // Label styling
+                inputLabel: 'text-gray-300 font-bold',
+                // Button styling: Visible and matching your theme
+                confirmButton: 'bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-700 mx-2 transition',
+                cancelButton: 'bg-gray-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-gray-700 mx-2 transition',
+                // Popup container
+                popup: 'rounded-xl border border-gray-700 shadow-2xl'
+            },
             inputValidator: (value) => {
                 if (!value) return 'You need to write something!';
                 const exists = maps.some(m => m.name.toLowerCase() === value.toLowerCase());
@@ -76,9 +89,24 @@ export const ProjectsManager = ({ profile }) => {
 
             if (data) {
                 setMaps([data, ...maps]);
-                Swal.fire({ icon: 'success', title: 'Project Created', timer: 1500, showConfirmButton: false, background: '#1e293b', color: '#fff' });
+                Swal.fire({ 
+                    icon: 'success', 
+                    title: 'Project Created', 
+                    timer: 1500, 
+                    showConfirmButton: false, 
+                    background: '#1e293b', 
+                    color: '#fff',
+                    customClass: { popup: 'rounded-xl border border-gray-700' }
+                });
             } else {
-                Swal.fire('Error', error.message, 'error');
+                Swal.fire({ 
+                    icon: 'error', 
+                    title: 'Error', 
+                    text: error.message,
+                    background: '#1e293b', 
+                    color: '#fff',
+                    confirmButtonColor: '#ef4444' 
+                });
             }
         }
     };

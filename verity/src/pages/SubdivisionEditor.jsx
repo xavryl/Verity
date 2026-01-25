@@ -46,6 +46,10 @@ const CustomDrawStyles = () => (
             background: #3b82f6 !important;
             border-color: #2563eb !important;
         }
+        /* Fix for SweetAlert2 Z-Index issues over Leaflet */
+        .swal2-container {
+            z-index: 20000 !important;
+        }
     `}</style>
 );
 
@@ -73,7 +77,7 @@ export const SubdivisionEditor = () => {
 
     const fileInputRef = useRef(null);
     const featureGroupRef = useRef();
-    // Removed the single boundary restriction check variable
+    
     const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
 
     const refreshData = async () => {
@@ -112,22 +116,65 @@ export const SubdivisionEditor = () => {
 
     const processNewShape = async (latlngs) => {
         if (drawMode === 'boundary') {
-            // Removed existingBoundary check here to allow multiple boundaries
             const { isConfirmed } = await Swal.fire({
-                title: 'Set Boundary?', text: "Save subdivision perimeter?", icon: 'question', showCancelButton: true, confirmButtonText: 'Yes'
+                title: 'Set Boundary?', 
+                text: "Save subdivision perimeter?", 
+                icon: 'question', 
+                showCancelButton: true, 
+                confirmButtonText: 'Yes, Save',
+                cancelButtonText: 'Cancel',
+                // --- STYLING FIX ---
+                buttonsStyling: false,
+                customClass: {
+                    confirmButton: 'bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 mx-2',
+                    cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold hover:bg-gray-300 mx-2',
+                    popup: 'rounded-xl shadow-2xl'
+                }
             });
             if (isConfirmed) {
                 await saveShapeToDB({ lot_number: 'BOUNDARY', type: 'boundary', status: 'boundary', price: 0, geometry: latlngs });
             }
         } else {
+            // --- STYLING FIX FOR NEW LOT DETAILS ---
             const { value: formValues } = await Swal.fire({
                 title: 'New Lot Details',
-                html: '<input id="swal-lot" class="swal2-input" placeholder="Lot Number">' +
-                      '<input id="swal-price" type="number" class="swal2-input" placeholder="Price">' +
-                      '<select id="swal-status" class="swal2-input"><option value="available">Available</option><option value="reserved">Reserved</option><option value="sold">Sold</option></select>',
-                focusConfirm: false, showCancelButton: true,
-                preConfirm: () => [document.getElementById('swal-lot').value, document.getElementById('swal-price').value, document.getElementById('swal-status').value]
+                html: `
+                    <div class="flex flex-col gap-3 text-left">
+                        <div>
+                            <label class="text-xs font-bold text-gray-500 uppercase">Lot Number</label>
+                            <input id="swal-lot" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition" placeholder="e.g. Block 1 Lot 5">
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold text-gray-500 uppercase">Price</label>
+                            <input id="swal-price" type="number" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition" placeholder="0.00">
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold text-gray-500 uppercase">Status</label>
+                            <select id="swal-status" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition bg-white">
+                                <option value="available">Available</option>
+                                <option value="reserved">Reserved</option>
+                                <option value="sold">Sold</option>
+                            </select>
+                        </div>
+                    </div>
+                `,
+                focusConfirm: false, 
+                showCancelButton: true,
+                confirmButtonText: 'Save Lot',
+                cancelButtonText: 'Cancel',
+                buttonsStyling: false, // DISABLE DEFAULT STYLES
+                customClass: {
+                    confirmButton: 'bg-emerald-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-emerald-700 transition mx-2',
+                    cancelButton: 'bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition mx-2',
+                    popup: 'rounded-2xl p-6 font-sans'
+                },
+                preConfirm: () => [
+                    document.getElementById('swal-lot').value, 
+                    document.getElementById('swal-price').value, 
+                    document.getElementById('swal-status').value
+                ]
             });
+
             if (formValues) {
                 const [lotNum, price, status] = formValues;
                 if (!lotNum) return; 
@@ -169,8 +216,23 @@ export const SubdivisionEditor = () => {
         const layers = e.layers;
         const idsToDelete = [];
         layers.eachLayer((layer) => { if (layer.options.id) idsToDelete.push(layer.options.id); });
+        
         if (idsToDelete.length > 0) {
-            const { isConfirmed } = await Swal.fire({ title: 'Delete Selected?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Yes' });
+            const { isConfirmed } = await Swal.fire({ 
+                title: 'Delete Selected?', 
+                text: "You won't be able to revert this!",
+                icon: 'warning', 
+                showCancelButton: true, 
+                confirmButtonText: 'Yes, delete it',
+                cancelButtonText: 'Cancel',
+                buttonsStyling: false,
+                customClass: {
+                    confirmButton: 'bg-red-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-700 mx-2',
+                    cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold hover:bg-gray-300 mx-2',
+                    popup: 'rounded-xl'
+                }
+            });
+
             if (isConfirmed) {
                 setLoading(true);
                 await supabase.from('lots').delete().in('id', idsToDelete);
@@ -181,11 +243,31 @@ export const SubdivisionEditor = () => {
     };
     
     const handleDelete = async (id) => {
-        const confirm = await Swal.fire({ title: 'Delete shape?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Yes' });
+        const confirm = await Swal.fire({ 
+            title: 'Delete shape?', 
+            text: "This cannot be undone.",
+            icon: 'warning', 
+            showCancelButton: true, 
+            confirmButtonText: 'Yes, Delete',
+            cancelButtonText: 'Cancel',
+            buttonsStyling: false,
+            customClass: {
+                confirmButton: 'bg-red-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-700 mx-2',
+                cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold hover:bg-gray-300 mx-2',
+                popup: 'rounded-xl'
+            }
+        });
+
         if (confirm.isConfirmed) {
             await supabase.from('lots').delete().eq('id', id);
             refreshData();
-            Swal.fire('Deleted', '', 'success');
+            Swal.fire({
+                title: 'Deleted!',
+                icon: 'success',
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-xl' }
+            });
         }
     };
 
@@ -238,9 +320,8 @@ export const SubdivisionEditor = () => {
 
             if (newLots.length > 0) {
                 setLoading(true);
-                // Removed boundary restriction logic in import
                 const { error } = await supabase.from('lots').insert(newLots);
-                if (!error) Swal.fire('Success', `Imported ${newLots.length} shapes successfully!`, 'success');
+                if (!error) Swal.fire({ title: 'Success', text: `Imported ${newLots.length} shapes successfully!`, icon: 'success', confirmButtonColor: '#10b981' });
                 else Swal.fire('Error', error.message, 'error');
                 
                 setLoading(false);
