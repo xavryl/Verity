@@ -4,16 +4,57 @@ import 'react-image-crop/dist/ReactCrop.css';
 
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase'; 
-import { getCroppedImg } from '../../lib/cropUtils'; 
+// REMOVED: import { getCroppedImg } from '../../lib/cropUtils'; 
 import { User, Save, Loader2, Link as LinkIcon, Camera, AlertTriangle, Check, RotateCcw, X } from 'lucide-react';
 
-// Helper: Center the crop circle automatically when image loads
+// --- HELPER 1: Center Crop Calculation ---
 function centerAspectCrop(mediaWidth, mediaHeight, aspect) {
   return centerCrop(
     makeAspectCrop({ unit: '%', width: 90 }, aspect, mediaWidth, mediaHeight),
     mediaWidth,
     mediaHeight
   );
+}
+
+// --- HELPER 2: Canvas Crop Logic (Embedded to fix Event Error) ---
+function getCroppedImg(image, crop, fileName) {
+  const canvas = document.createElement('canvas');
+  const scaleX = image.naturalWidth / image.width;
+  const scaleY = image.naturalHeight / image.height;
+  
+  // Set canvas size to the actual crop size (high res)
+  canvas.width = crop.width * scaleX;
+  canvas.height = crop.height * scaleY;
+  
+  const ctx = canvas.getContext('2d');
+
+  // Draw the cropped image onto the canvas
+  ctx.drawImage(
+    image,
+    crop.x * scaleX,
+    crop.y * scaleY,
+    crop.width * scaleX,
+    crop.height * scaleY,
+    0,
+    0,
+    crop.width * scaleX,
+    crop.height * scaleY
+  );
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error('Canvas is empty'));
+          return;
+        }
+        blob.name = fileName;
+        resolve(blob);
+      },
+      'image/jpeg',
+      0.9 // Quality (0 to 1)
+    );
+  });
 }
 
 export const ProfileSetup = ({ onComplete }) => {
@@ -79,36 +120,46 @@ export const ProfileSetup = ({ onComplete }) => {
     // 2. ON IMAGE LOAD
     const onImageLoad = (e) => {
         const { width, height } = e.currentTarget;
-        setCrop(centerAspectCrop(width, height, 1)); 
+        const initialCrop = centerAspectCrop(width, height, 1);
+        setCrop(initialCrop);
+        setCompletedCrop(initialCrop);
     };
 
     // 3. GENERATE & UPLOAD
     const uploadCroppedImage = async () => {
-        if (!user || !completedCrop || !imgRef.current) return;
+        if (!user || !completedCrop || !imgRef.current) {
+            alert("Please adjust the crop area first.");
+            return;
+        }
 
         try {
             setUploading(true);
             
-            const croppedBlob = await getCroppedImg(imgRef.current.src, completedCrop);
+            // Generate Blob using the internal helper function
             const fileName = `${user.id}-${Date.now()}.jpg`;
+            const croppedBlob = await getCroppedImg(imgRef.current, completedCrop, fileName);
+            
             const filePath = `${fileName}`;
 
+            // Upload to Supabase
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
                 .upload(filePath, croppedBlob, { upsert: true, contentType: 'image/jpeg' });
 
             if (uploadError) throw uploadError;
 
+            // Get Public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
                 .getPublicUrl(filePath);
 
+            // Update State with new URL (add timestamp to force refresh)
             setFormData(prev => ({ ...prev, avatar_url: publicUrl + '?t=' + Date.now() }));
             setIsCropping(false); 
 
         } catch (e) {
-            console.error(e);
-            alert('Upload failed: ' + e.message);
+            console.error("Upload Error:", e);
+            alert('Upload failed. Please try a different image.');
         } finally {
             setUploading(false);
             setImageSrc(null);
@@ -145,10 +196,10 @@ export const ProfileSetup = ({ onComplete }) => {
                             <button onClick={() => { setIsCropping(false); setImageSrc(null); }} className="text-slate-400 hover:text-white"><X size={20}/></button>
                         </div>
                         
-                        <div className="bg-slate-950 rounded-xl overflow-hidden border border-slate-800 max-h-[60vh]">
+                        <div className="bg-slate-950 rounded-xl overflow-hidden border border-slate-800 max-h-[60vh] w-full flex justify-center items-center">
                             <ReactCrop
                                 crop={crop}
-                                onChange={(pixelCrop, percentCrop) => setCrop(percentCrop)}
+                                onChange={(_, percentCrop) => setCrop(percentCrop)}
                                 onComplete={(c) => setCompletedCrop(c)}
                                 aspect={1}        
                                 circularCrop={true} 
@@ -160,7 +211,7 @@ export const ProfileSetup = ({ onComplete }) => {
                                     src={imageSrc} 
                                     onLoad={onImageLoad}
                                     alt="Crop me" 
-                                    style={{ maxHeight: '55vh', objectFit: 'contain' }} 
+                                    style={{ maxHeight: '55vh', maxWidth: '100%', objectFit: 'contain' }} 
                                 />
                             </ReactCrop>
                         </div>

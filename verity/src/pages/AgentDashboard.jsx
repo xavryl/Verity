@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-// FIX: Correct import path for src/pages/ location
 import { supabase } from '../lib/supabase';
 import { 
     LayoutDashboard, Users, 
-    Map as MapIcon, Settings, Building2,
+    Map as MapIcon, Building2,
     CheckCircle2, 
     LogOut, UserCog, ExternalLink,
     Map
@@ -15,7 +14,7 @@ import { LeadInspector } from '../components/widget/LeadInspector';
 import { PropertyManager } from '../components/dashboard/PropertyManager'; 
 import { ProfileSetup } from '../components/dashboard/ProfileSetup';
 import { LeadsBoard } from '../components/dashboard/LeadsBoard'; 
-import { WidgetBuilder } from '../components/dashboard/WidgetBuilder'; 
+// Removed WidgetBuilder Import
 import { VerityMap } from '../components/map/VerityMap'; 
 import { ProjectsManager } from '../components/dashboard/ProjectsManager'; 
 
@@ -129,6 +128,31 @@ export const AgentDashboard = () => {
     hasCheckedRef.current = true; 
   }, [user, profile, loading]);
 
+  // Helper to render content based on tab
+  const renderContent = () => {
+    switch (activeTab) {
+        case 'overview':
+            return <OverviewPanel profile={profile} user={user} />;
+        case 'leads':
+            return (
+                <LeadsBoard 
+                   crmEnabled={profile?.crm_enabled || false} 
+                   onToggleCrm={async () => {
+                       const newVal = !profile?.crm_enabled;
+                       if(updateProfile) updateProfile({ crm_enabled: newVal });
+                       await supabase.from('profiles').update({ crm_enabled: newVal }).eq('id', user.id);
+                   }} 
+                />
+            );
+        case 'projects':
+            return <ProjectsManager />;
+        case 'properties':
+            return <PropertyManager />;
+        default:
+            return <OverviewPanel profile={profile} user={user} />;
+    }
+  };
+
   return (
     // [ROOT THEME] Deep Slate Background
     <div className="flex h-screen font-sans overflow-hidden bg-slate-950 text-white">
@@ -175,9 +199,6 @@ export const AgentDashboard = () => {
            <div className="px-4 mb-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Management</div>
            <NavBtn icon={Map} label="Project Maps" isActive={activeTab === 'projects'} onClick={() => setActiveTab('projects')} />
            <NavBtn icon={Building2} label="Properties" isActive={activeTab === 'properties'} onClick={() => setActiveTab('properties')} />
-           
-           <div className="px-4 mb-2 mt-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Tools</div>
-           <NavBtn icon={Settings} label="Widget Builder" isActive={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
         </nav>
         
         {/* 3. BOTTOM: Logout */}
@@ -204,22 +225,15 @@ export const AgentDashboard = () => {
             <button onClick={signOut} className="text-slate-400"><LogOut size={20}/></button>
         </div>
 
-        {/* Content Render */}
+        {/* Content Render with Transition */}
         <div className="flex-1 overflow-hidden relative">
-            {activeTab === 'overview' ? <OverviewPanel profile={profile} user={user} /> : 
-             activeTab === 'settings' ? <WidgetBuilder profile={profile} /> : 
-             activeTab === 'properties' ? <PropertyManager /> : 
-             activeTab === 'projects' ? <ProjectsManager /> : 
-             activeTab === 'leads' ? (
-                 <LeadsBoard 
-                    crmEnabled={profile?.crm_enabled || false} 
-                    onToggleCrm={async () => {
-                        const newVal = !profile?.crm_enabled;
-                        if(updateProfile) updateProfile({ crm_enabled: newVal });
-                        await supabase.from('profiles').update({ crm_enabled: newVal }).eq('id', user.id);
-                    }} 
-                 />
-             ) : null}
+            {/* Adding 'key={activeTab}' forces React to re-mount the div, triggering the animation */}
+            <div 
+                key={activeTab} 
+                className="h-full w-full animate-in fade-in slide-in-from-bottom-2 duration-500"
+            >
+                {renderContent()}
+            </div>
         </div>
         
         <LeadInspector lead={activeLead} onClose={() => setActiveLeadId(null)} />
@@ -230,7 +244,7 @@ export const AgentDashboard = () => {
           <button onClick={() => setActiveTab('overview')} className={`flex flex-col items-center p-2 ${activeTab === 'overview' ? 'text-blue-400' : 'text-slate-400'}`}><LayoutDashboard size={20}/><span className="text-[10px] font-bold">Home</span></button>
           <button onClick={() => setActiveTab('leads')} className={`flex flex-col items-center p-2 ${activeTab === 'leads' ? 'text-blue-400' : 'text-slate-400'}`}><Users size={20}/><span className="text-[10px] font-bold">Leads</span></button>
           <button onClick={() => setActiveTab('projects')} className={`flex flex-col items-center p-2 ${activeTab === 'projects' ? 'text-blue-400' : 'text-slate-400'}`}><Map size={20}/><span className="text-[10px] font-bold">Maps</span></button>
-          <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center p-2 ${activeTab === 'settings' ? 'text-blue-400' : 'text-slate-400'}`}><Settings size={20}/><span className="text-[10px] font-bold">Tools</span></button>
+          <button onClick={() => setActiveTab('properties')} className={`flex flex-col items-center p-2 ${activeTab === 'properties' ? 'text-blue-400' : 'text-slate-400'}`}><Building2 size={20}/><span className="text-[10px] font-bold">Props</span></button>
       </div>
 
       <div className="relative z-[9999]">
