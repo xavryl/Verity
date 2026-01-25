@@ -6,16 +6,69 @@ import {
     BookOpen
 } from 'lucide-react';
 
+// --- CONFIGURATION ---
+
+const TAG_TO_TEXT = {
+    'student': 'top universities',
+    'family': 'schools and parks',
+    'pets': 'pet clinics',
+    'fitness': 'fitness centers',
+    'safety': 'secure community hubs',
+    'convenience': 'shopping malls'
+};
+
+const SENTENCE_TEMPLATES = [
+    // Direct & Punchy
+    "Nearby {amenities} that are top-rated.",
+    "Excellent access to {amenities}.",
+    "Ideally located close to {amenities}.",
+    "Perfect spot near {amenities} for your lifestyle.",
+    "Enjoy quick access to {amenities}.",
+    "Surrounded by {amenities} and more.",
+    "A smart choice near {amenities}.",
+    "Conveniently placed near {amenities}.",
+    
+    // Lifestyle & Benefit Focused
+    "Live minutes away from {amenities}.",
+    "Your daily life made easier with {amenities} nearby.",
+    "Stay connected to {amenities}.",
+    "Strategically positioned near {amenities}.",
+    "Experience the convenience of nearby {amenities}.",
+    "Everything you need, including {amenities}, is just around the corner.",
+    "A prime location featuring access to {amenities}.",
+    "Benefit from being close to {amenities}.",
+    
+    // Short & Sweet
+    "Close to {amenities}.",
+    "Near {amenities}.",
+    "Access to {amenities}.",
+    "Great for {amenities}.",
+    
+    // Descriptive
+    "This property offers seamless access to {amenities}.",
+    "Nestled in a community with great {amenities}.",
+    "You'll love the proximity to {amenities}.",
+    "Designed for easy access to {amenities}."
+];
+
+// Helper: formatter for lists (e.g. "A, B, and C")
+const formatList = (items) => {
+    if (items.length === 0) return "everything you need";
+    if (items.length === 1) return items[0];
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+};
+
 // Simple Distance Calc (Haversine Formula)
 const getDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371; 
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a = 
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
+    return R * c; 
 };
 
 export const LifestyleQuiz = ({ properties, amenities, onRecommend, onFilter, onPersonaSelect }) => {
@@ -32,7 +85,6 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend, onFilter, on
     // Filter properties for the active map (Type Safe)
     const activeProperties = useMemo(() => {
         if (!activeMapId) return properties;
-        // FIX: String comparison for safety
         return properties.filter(p => String(p.map_id) === String(activeMapId));
     }, [properties, activeMapId]);
 
@@ -60,72 +112,83 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend, onFilter, on
         setSelectedTags(newTags);
     };
 
-    // --- SMART GENERATOR: CALCULATE REAL DISTANCES ---
+    // --- SENTENCE GENERATOR ---
+    const generateSmartDescription = (tags) => {
+        // 1. Map tags to text (e.g. ['fitness', 'student'] -> ['fitness centers', 'top universities'])
+        const amenitiesTextList = tags.map(tag => TAG_TO_TEXT[tag] || tag);
+        
+        // 2. Format list (e.g. "fitness centers and top universities")
+        const amenitiesString = formatList(amenitiesTextList);
+
+        // 3. Pick a random template
+        const template = SENTENCE_TEMPLATES[Math.floor(Math.random() * SENTENCE_TEMPLATES.length)];
+
+        // 4. Inject
+        return template.replace('{amenities}', amenitiesString);
+    };
+
+    // --- ENRICHMENT LOGIC ---
     const enrichPropertyData = (property, tags) => {
+        // We generally force update unless headline is explicitly locked, to ensure consistency
         const isGarbage = !property.description || property.description.length < 15;
         let smartHeadline = property.headline;
         let smartBody = property.description;
-        
-        // If the description is bad ("asd"), generate a new one using Real Map Data
-        if (isGarbage && amenities && amenities.length > 0) {
+
+        // Force generation logic
+        if (isGarbage || true) { // Always run to ensure quality description
             
-            // 1. Identify keywords to search for based on selected tags
-            let searchKeywords = [];
-            tags.forEach(tag => {
-                const profile = PROFILES.find(p => p.id === tag);
-                if (profile) searchKeywords.push(...profile.keywords);
-            });
-            if (searchKeywords.length === 0) searchKeywords = ['mall', 'market', 'school']; // Default
-
-            // 2. Find the single nearest amenity matching those keywords
+            // PRIORITY 1: REAL AMENITY MATCH (Specific Landmark)
             let nearest = null;
-            let minDst = Infinity;
+            if (amenities && amenities.length > 0) {
+                let searchKeywords = [];
+                tags.forEach(tag => {
+                    const profile = PROFILES.find(p => p.id === tag);
+                    if (profile) searchKeywords.push(...profile.keywords);
+                });
+                if (searchKeywords.length === 0) searchKeywords = ['mall', 'market', 'school']; 
 
-            for (const amen of amenities) {
-                const typeStr = (amen.sub_category || amen.type || "").toLowerCase();
-                const nameStr = (amen.name || "").toLowerCase();
-                
-                // Does this amenity match our needs?
-                if (searchKeywords.some(k => typeStr.includes(k) || nameStr.includes(k))) {
-                    const dst = getDistance(property.lat, property.lng, amen.lat, amen.lng);
-                    if (dst < minDst) {
-                        minDst = dst;
-                        nearest = amen;
+                let minDst = Infinity;
+                for (const amen of amenities) {
+                    const typeStr = (amen.sub_category || amen.type || "").toLowerCase();
+                    const nameStr = (amen.name || "").toLowerCase();
+                    if (searchKeywords.some(k => typeStr.includes(k) || nameStr.includes(k))) {
+                        const dst = getDistance(property.lat, property.lng, amen.lat, amen.lng);
+                        if (dst < minDst) {
+                            minDst = dst;
+                            nearest = amen;
+                        }
                     }
+                }
+                
+                // Only use specific landmark if VERY close (< 2km)
+                if (nearest && minDst < 2.0) {
+                    const distDisplay = minDst < 1 ? `${(minDst * 1000).toFixed(0)}m` : `${minDst.toFixed(1)}km`;
+                    const typeDisplay = nearest.sub_category || nearest.type || "Landmark";
+                    
+                    smartHeadline = `Near ${typeDisplay}`;
+                    smartBody = `Ideally situated just ${distDisplay} from ${nearest.name}. Perfect for your ${tags[0] || 'lifestyle'} needs.`;
                 }
             }
 
-            // 3. Write the description dynamically
-            if (nearest) {
-                const distDisplay = minDst < 1 ? `${(minDst * 1000).toFixed(0)}m` : `${minDst.toFixed(1)}km`;
-                const typeDisplay = nearest.sub_category || nearest.type || "landmark";
-                
-                smartHeadline = `Near ${typeDisplay}`;
-                smartBody = `Ideally situated just ${distDisplay} from ${nearest.name}. Perfect for your ${tags[0] || 'lifestyle'} needs.`;
-            } else {
-                // Fallback if no relevant amenities found nearby
+            // PRIORITY 2: DYNAMIC SENTENCE FALLBACK
+            // If no specific landmark found (or map isolated), use the Smart Generator
+            if (!nearest || !smartBody) {
                 const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Lifestyle';
                 smartHeadline = `Top ${mainTag} Choice`;
-                smartBody = "Selected for its strategic location matching your lifestyle preferences.";
+                // Generate the sentence: "Nearby schools and gyms that are top-rated."
+                smartBody = generateSmartDescription(tags);
             }
-        } 
-        // Fallback if we have no amenities data loaded yet
-        else if (isGarbage) {
-             const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Lifestyle';
-             smartHeadline = `Top ${mainTag} Choice`;
-             smartBody = "This property aligns perfectly with your selected location priorities.";
         }
 
-        // Ensure headline exists even if description was fine but headline missing
-        if (!smartHeadline && !property.headline) {
-             const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Verified';
-             smartHeadline = `${mainTag} Recommended`;
+        // Safety for headline
+        if (!smartHeadline) {
+             smartHeadline = `Recommended Choice`;
         }
 
         return {
             ...property,
-            headline: smartHeadline || property.headline,
-            body: smartBody || property.description,
+            headline: smartHeadline,
+            body: smartBody,
             highlights: property.highlights || tags
         };
     };
@@ -164,14 +227,12 @@ export const LifestyleQuiz = ({ properties, amenities, onRecommend, onFilter, on
             let enrichedMatches = data.matches.map(match => {
                 const realProp = activeProperties.find(p => String(p.id) === String(match.id));
                 if (!realProp) return null;
-                // Generate description if needed
                 return enrichPropertyData({ ...match, ...realProp }, selectedTags); 
             }).filter(Boolean);
 
             // 2. FALLBACK (Local Generation)
             if (enrichedMatches.length === 0) {
-                console.log("Generating smart local fallback...");
-                // Sort local properties by relevance? For now just take top 5 and generate descriptions
+                // Force top 5 local properties to go through enrichment
                 enrichedMatches = activeProperties.slice(0, 5).map(p => enrichPropertyData(p, selectedTags));
             }
 
