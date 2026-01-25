@@ -6,7 +6,19 @@ import {
     BookOpen
 } from 'lucide-react';
 
-export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSelect }) => {
+// Simple Distance Calc (Haversine Formula)
+const getDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = 
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in km
+};
+
+export const LifestyleQuiz = ({ properties, amenities, onRecommend, onFilter, onPersonaSelect }) => {
     const [searchParams] = useSearchParams();
     const activeMapId = searchParams.get('map_id'); 
 
@@ -17,25 +29,19 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
     const [activeIndex, setActiveIndex] = useState(0);
     const [isTransitioning, setIsTransitioning] = useState(false);
 
-    // 1. STRICT FILTER: Only see properties for the Active Map
+    // Filter properties for the active map
     const activeProperties = useMemo(() => {
         if (!activeMapId) return properties;
         return properties.filter(p => p.map_id === activeMapId);
     }, [properties, activeMapId]);
 
     const PROFILES = [
-        { id: 'student', label: 'Student', icon: BookOpen, color: 'text-pink-600', bg: 'bg-pink-50', 
-          desc: "Perfect for students with easy access to universities and study hubs." },
-        { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-600', bg: 'bg-green-50', 
-          desc: "A family-friendly environment near top-rated schools and parks." },
-        { id: 'pets', label: 'Pet Parent', icon: Dog, color: 'text-orange-500', bg: 'bg-orange-50', 
-          desc: "Great for pets, featuring open spaces and nearby vet clinics." },
-        { id: 'fitness', label: 'Fitness', icon: Dumbbell, color: 'text-blue-500', bg: 'bg-blue-50', 
-          desc: "Ideal for an active lifestyle, close to gyms and sports centers." },
-        { id: 'safety', label: 'Safety', icon: ShieldCheck, color: 'text-red-500', bg: 'bg-red-50', 
-          desc: "Located in a secure area with proximity to police and fire stations." },
-        { id: 'convenience', label: 'Urban', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50', 
-          desc: "Enjoy city living with malls, groceries, and dining just steps away." }
+        { id: 'student', label: 'Student', icon: BookOpen, color: 'text-pink-600', bg: 'bg-pink-50', keywords: ['school', 'university', 'college', 'library'] },
+        { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-600', bg: 'bg-green-50', keywords: ['school', 'park', 'market'] },
+        { id: 'pets', label: 'Pet Parent', icon: Dog, color: 'text-orange-500', bg: 'bg-orange-50', keywords: ['vet', 'park', 'clinic'] },
+        { id: 'fitness', label: 'Fitness', icon: Dumbbell, color: 'text-blue-500', bg: 'bg-blue-50', keywords: ['gym', 'fitness', 'sports'] },
+        { id: 'safety', label: 'Safety', icon: ShieldCheck, color: 'text-red-500', bg: 'bg-red-50', keywords: ['police', 'barangay', 'station'] },
+        { id: 'convenience', label: 'Urban', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50', keywords: ['mall', 'supermarket', 'convenience'] }
     ];
 
     const toggleTag = (id) => {
@@ -53,35 +59,60 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
         setSelectedTags(newTags);
     };
 
-    // --- SMART GENERATOR: FIXES "ASD" / MISSING DESCRIPTIONS ---
+    // --- SMART GENERATOR: CALCULATE REAL DISTANCES ---
     const enrichPropertyData = (property, tags) => {
         const isGarbage = !property.description || property.description.length < 15;
-
-        // A. Generate a Smart Headline
         let smartHeadline = property.headline;
-        if (!smartHeadline || isGarbage) {
-            const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Lifestyle';
-            smartHeadline = `Top ${mainTag} Choice`;
-        }
-
-        // B. Generate Smart Body Text
         let smartBody = property.description;
-        if (isGarbage) {
-            if (tags.length > 0) {
-                const profile = PROFILES.find(p => p.id === tags[0]);
-                smartBody = profile ? profile.desc : "Selected based on your specific lifestyle preferences.";
+        
+        // If the description is bad ("asd"), generate a new one using Real Map Data
+        if (isGarbage && amenities && amenities.length > 0) {
+            
+            // 1. Identify keywords to search for based on selected tags
+            let searchKeywords = [];
+            tags.forEach(tag => {
+                const profile = PROFILES.find(p => p.id === tag);
+                if (profile) searchKeywords.push(...profile.keywords);
+            });
+            if (searchKeywords.length === 0) searchKeywords = ['mall', 'market', 'school']; // Default
+
+            // 2. Find the single nearest amenity matching those keywords
+            let nearest = null;
+            let minDst = Infinity;
+
+            for (const amen of amenities) {
+                const typeStr = (amen.sub_category || amen.type || "").toLowerCase();
+                const nameStr = (amen.name || "").toLowerCase();
                 
-                if (tags.length > 1) {
-                    const secondProfile = PROFILES.find(p => p.id === tags[1]);
-                    if (secondProfile) smartBody += ` Also ${secondProfile.desc.charAt(0).toLowerCase() + secondProfile.desc.slice(1)}`;
+                // Does this amenity match our needs?
+                if (searchKeywords.some(k => typeStr.includes(k) || nameStr.includes(k))) {
+                    const dst = getDistance(property.lat, property.lng, amen.lat, amen.lng);
+                    if (dst < minDst) {
+                        minDst = dst;
+                        nearest = amen;
+                    }
                 }
-            } else {
-                smartBody = "This property matches your selected location preferences.";
             }
-        } else {
-            smartBody = property.description.length > 120 
-                ? property.description.substring(0, 120) + "..." 
-                : property.description;
+
+            // 3. Write the description dynamically
+            if (nearest) {
+                const distDisplay = minDst < 1 ? `${(minDst * 1000).toFixed(0)}m` : `${minDst.toFixed(1)}km`;
+                const typeDisplay = nearest.sub_category || nearest.type || "landmark";
+                
+                smartHeadline = `Near ${typeDisplay}`;
+                smartBody = `Ideally situated just ${distDisplay} from ${nearest.name}. Perfect for your ${tags[0] || 'lifestyle'} needs.`;
+            } else {
+                // Fallback if no relevant amenities found nearby
+                const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Lifestyle';
+                smartHeadline = `Top ${mainTag} Choice`;
+                smartBody = "Selected for its strategic location matching your lifestyle preferences.";
+            }
+        } 
+        // Fallback if we have no amenities data loaded yet
+        else if (isGarbage) {
+             const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Lifestyle';
+             smartHeadline = `Top ${mainTag} Choice`;
+             smartBody = "This property aligns perfectly with your selected location priorities.";
         }
 
         return {
@@ -102,8 +133,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
 
         setStep('loading');
 
-        // --- FIX: RESTORED FULL PAYLOAD STRUCTURE ---
-        // The backend requires ALL 4 priorities. Missing fields cause Error 422.
         const payload = {
             filter_map_id: activeMapId, 
             personas: selectedTags, 
@@ -124,16 +153,18 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
             
             const data = await response.ok ? await response.json() : { matches: [] };
             
-            // 1. FILTER & ENRICH
+            // 1. FILTER & ENRICH (Backend Results)
             let enrichedMatches = data.matches.map(match => {
                 const realProp = activeProperties.find(p => String(p.id) === String(match.id));
                 if (!realProp) return null;
+                // Generate description if needed
                 return enrichPropertyData({ ...match, ...realProp }, selectedTags); 
             }).filter(Boolean);
 
-            // 2. FALLBACK
+            // 2. FALLBACK (Local Generation)
             if (enrichedMatches.length === 0) {
-                console.log("AI returned empty/invalid. Generating smart local fallback.");
+                console.log("Generating smart local fallback...");
+                // Sort local properties by relevance? For now just take top 5 and generate descriptions
                 enrichedMatches = activeProperties.slice(0, 5).map(p => enrichPropertyData(p, selectedTags));
             }
 
@@ -235,7 +266,7 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
                     <div className="flex flex-col gap-4">
                         <div key={activeIndex} className={`bg-violet-50 border border-violet-100 rounded-xl p-4 relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-2 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
                             <Quote size={20} className="absolute -top-2 -left-2 text-violet-200 fill-violet-200 bg-white rounded-full p-0.5 border border-violet-100" />
-                            <h5 className="text-violet-800 font-bold text-sm mb-1">{activeMatch.headline || activeMatch.name}</h5>
+                            <h5 className="text-violet-800 font-bold text-sm mb-1">{activeMatch.headline}</h5>
                             <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body}"</p>
                             <div className="flex flex-wrap gap-1.5">
                                 {(activeMatch.highlights || selectedTags).map((h, i) => (

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom'; // <--- ADDED THIS IMPORT
+import { useSearchParams } from 'react-router-dom'; 
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -66,6 +66,7 @@ const getAmenityIcon = (sub_category, type, isHovered = false, isHighlighted = f
     const cacheKey = `${fileName}_${isHovered}_${isHighlighted}`;
     if (iconCache[cacheKey]) return iconCache[cacheKey];
 
+    // Resize Logic: Highlighted pins are significantly larger
     const size = isHighlighted ? [65, 75] : (isHovered ? [52, 62] : [42, 52]); 
     
     const icon = new L.Icon({
@@ -96,11 +97,9 @@ const MapController = ({ targetCoords }) => {
 };
 
 export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
-    // --- FIX 1: Read URL Search Params directly ---
+    // Resolve Active Map ID from URL or Props
     const [searchParams] = useSearchParams();
     const urlMapId = searchParams.get('map_id');
-    
-    // Priority: Prop ID -> URL ID -> null
     const activeMapId = mapId || map_id || urlMapId;
 
     const [properties, setProperties] = useState([]);
@@ -128,23 +127,18 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
         return () => { document.head.removeChild(style); };
     }, []);
 
-    // --- DATA LOADING (FIXED LOGIC) ---
+    // --- DATA LOADING ---
     useEffect(() => {
         const loadData = async () => {
-            setProperties([]); // Clear ghosts
+            setProperties([]); // Clear old data to prevent ghosts
             
             let query = supabase.from('properties').select('*').neq('status', 'sold');
             
-            // --- FIX 2: Strict Priority Logic ---
+            // Priority Logic: Specific Map ID trumps general Owner View
             if (activeMapId) {
-                // If a map ID exists (from URL or Props), ONLY load that map.
-                // This prevents "showOwnerData" from accidentally flooding the map with other projects.
                 query = query.eq('map_id', activeMapId);
-                console.log("Loading Specific Map:", activeMapId);
             } else if (showOwnerData && userId) {
-                // Only fall back to "Show All My Properties" if NO map ID is specified.
                 query = query.eq('user_id', userId);
-                console.log("Loading All Owner Properties");
             }
 
             const { data: props } = await query;
@@ -153,7 +147,7 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
                 if (props.length > 0 && !selectedProp) setMapTarget([props[0].lat, props[0].lng]);
             }
 
-            // Amenities loading...
+            // Amenities Loading (Unlimited)
             let allRows = [];
             let from = 0;
             const step = 1000;
@@ -218,6 +212,7 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
             return { ...a, _sub: rawSub, _type: rawType, dist: d, ...estimateTime(d) };
         }).sort((a, b) => a.dist - b.dist);
 
+        // 1. Highlighted Pins (from Quiz)
         if (highlightedAmenityIds.length > 0) {
             const highPins = sorted.filter(a => highlightedAmenityIds.includes(a.id));
             let otherPins = [];
@@ -231,10 +226,12 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
             return [...highPins, ...otherPins].filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
         }
 
+        // 2. Standard Filtering
         if (activePanelFilter) {
             const validTargets = DB_MAPPING[activePanelFilter] || [];
             return sorted.filter(a => validTargets.some(t => a._sub.includes(t) || a._type.includes(t))).slice(0, 4);
         } else {
+            // Default View
             const DEFAULTS = { 'police': 1, 'fire': 1, 'hospital': 1, 'clinic': 1, 'school': 2, 'college': 3 };
             const results = [];
             const usedIds = new Set();
@@ -360,7 +357,12 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
                 ))}
             </MapContainer>
 
-            <LifestyleQuiz properties={properties} onRecommend={handlePropSelect} />
+            {/* Pass Amenities to Quiz for Smart Description Generation */}
+            <LifestyleQuiz 
+                properties={properties} 
+                amenities={allAmenities} 
+                onRecommend={handlePropSelect} 
+            />
             
             <UnifiedPanel 
                 key={selectedProp?.id || 'empty'} 
