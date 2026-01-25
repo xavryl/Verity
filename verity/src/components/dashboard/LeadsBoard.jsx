@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useLeads } from '../../context/LeadContext';
+// NEW: Import supabase to update the lot status
+import { supabase } from '../../lib/supabase'; 
 
 // --- HELPER: COPY FUNCTION ---
 const copyToClipboard = (text, label) => {
@@ -20,7 +22,11 @@ const copyToClipboard = (text, label) => {
     Toast.fire({ icon: 'success', title: `${label} Copied!` });
 };
 
-// --- SUB-COMPONENT: LEAD CARD (KANBAN) ---
+// ... (LeadCard component remains same) ...
+// ... (KanbanColumn component remains same) ...
+// ... (ListView component remains same) ...
+// ... (StatCard component remains same) ...
+
 const LeadCard = ({ lead, index, isSelected, onSelect }) => { 
     const { setActiveLeadId } = useLeads();
   
@@ -124,7 +130,6 @@ const KanbanColumn = ({ id, title, count, color, leads, selectedIds, onToggleSel
     </div>
 );
 
-// --- LIST VIEW COMPONENT ---
 const ListView = ({ leads, selectedIds, onToggleSelect, onDeleteSingle, onStatusChange }) => (
     <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden flex-1 flex flex-col">
         <div className="overflow-auto flex-1">
@@ -212,19 +217,6 @@ const ListView = ({ leads, selectedIds, onToggleSelect, onDeleteSingle, onStatus
     </div>
 );
 
-// --- COMPACT STAT CARD ---
-const StatCard = ({ label, value, icon: Icon, color, bg }) => (
-    <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between hover:border-slate-600 hover:shadow-md transition duration-200 group">
-        <div className="flex items-center gap-4">
-            <div className={`p-2.5 rounded-lg bg-slate-900 ${color} ring-1 ring-white/5`}>
-                <Icon size={18} />
-            </div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider group-hover:text-slate-300 transition-colors">{label}</span>
-        </div>
-        <span className={`text-2xl font-black ${color.replace('text-', 'text-')}`}>{value}</span>
-    </div>
-);
-
 // --- MAIN COMPONENT ---
 export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
     const { leads, moveLead, deleteLeads } = useLeads();
@@ -278,7 +270,7 @@ export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
             title: `Delete ${selectedIds.size} leads?`,
             text: "This cannot be undone.",
             icon: 'warning',
-            background: '#1e293b', // Dark background for alert
+            background: '#1e293b', 
             color: '#fff',
             showCancelButton: true,
             confirmButtonColor: '#ef4444',
@@ -317,11 +309,37 @@ export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
         });
     };
 
-    const onDragEnd = (result) => { 
+    const onDragEnd = async (result) => { 
         const { source, destination, draggableId } = result; 
         if (!destination) return; 
         if (source.droppableId === destination.droppableId && source.index === destination.index) return; 
+        
+        // 1. Move Lead in UI/Context
         moveLead(draggableId, source.droppableId, destination.droppableId); 
+
+        // 2. NEW: Automatic Property Status Update
+        if (destination.droppableId === 'closed') {
+            // Find the lead object to get the property name
+            const movedLead = leads[source.droppableId].find(l => l.id.toString() === draggableId);
+            
+            if (movedLead && movedLead.prop) {
+                // Try to find a matching lot in the database
+                // Note: This matches strictly by 'lot_number' text.
+                const { error } = await supabase
+                    .from('lots')
+                    .update({ status: 'sold' })
+                    .eq('lot_number', movedLead.prop);
+
+                if (!error) {
+                    const Toast = Swal.mixin({
+                        toast: true, position: 'top-end', showConfirmButton: false, timer: 3000
+                    });
+                    Toast.fire({ icon: 'success', title: 'Property marked as SOLD!' });
+                } else {
+                    console.error("Auto-sold update failed:", error);
+                }
+            }
+        }
     };
 
     if (!crmEnabled) {

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+// FIX: Correct import path for src/pages/ location
 import { supabase } from '../lib/supabase';
 import { 
     LayoutDashboard, Users, 
@@ -138,9 +139,12 @@ export const AgentDashboard = () => {
         {/* 1. TOP: Logo & Profile */}
         <div className="p-8 pb-4 flex flex-col items-center border-b border-slate-800">
             {/* Logo */}
-            <div className="flex flex-col items-center gap-3 mb-8">
-                <img src="/pins/veritylogo.svg" alt="Verity" className="h-12 w-auto drop-shadow-sm" />
-                <span className="text-[10px] font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-blue-600 uppercase tracking-[0.3em]">
+            <div className="flex flex-col items-center mb-8">
+                <div className="flex items-center gap-3">
+                    <img src="/pins/veritylogo.svg" alt="Verity" className="h-10 w-auto drop-shadow-sm" />
+                    <span className="text-2xl font-black text-white tracking-tighter">VERITY</span>
+                </div>
+                <span className="text-[10px] font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-blue-500 uppercase tracking-[0.3em] mt-1">
                     Command Center
                 </span>
             </div>
@@ -193,7 +197,10 @@ export const AgentDashboard = () => {
         
         {/* Mobile Header (Hidden on Desktop) */}
         <div className="md:hidden h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
-            <img src="/pins/veritylogo.svg" alt="V" className="h-8 w-auto" />
+            <div className="flex items-center gap-2">
+                <img src="/pins/veritylogo.svg" alt="V" className="h-8 w-auto" />
+                <span className="text-xl font-black text-white tracking-tight">VERITY</span>
+            </div>
             <button onClick={signOut} className="text-slate-400"><LogOut size={20}/></button>
         </div>
 

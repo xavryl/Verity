@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom'; 
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, Polygon, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { supabase } from '../../lib/supabase';
+// FIX: Correct Import Path
+import { supabase } from '../../lib/supabase'; 
 import { UnifiedPanel } from '../widget/UnifiedPanel';
 import { LifestyleQuiz } from '../widget/LifestyleQuiz'; 
 import { TrafficWidget } from '../widget/TrafficWidget'; 
@@ -66,7 +67,6 @@ const getAmenityIcon = (sub_category, type, isHovered = false, isHighlighted = f
     const cacheKey = `${fileName}_${isHovered}_${isHighlighted}`;
     if (iconCache[cacheKey]) return iconCache[cacheKey];
 
-    // Resize Logic: Highlighted pins are significantly larger
     const size = isHighlighted ? [65, 75] : (isHovered ? [52, 62] : [42, 52]); 
     
     const icon = new L.Icon({
@@ -97,12 +97,12 @@ const MapController = ({ targetCoords }) => {
 };
 
 export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
-    // Resolve Active Map ID from URL or Props
     const [searchParams] = useSearchParams();
     const urlMapId = searchParams.get('map_id');
     const activeMapId = mapId || map_id || urlMapId;
 
     const [properties, setProperties] = useState([]);
+    const [subdivisionLots, setSubdivisionLots] = useState([]);
     const [allAmenities, setAllAmenities] = useState([]); 
     const [selectedProp, setSelectedProp] = useState(null);
     const [selectedAmenity, setSelectedAmenity] = useState(null);
@@ -119,6 +119,9 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
     const [activeTrafficRoute, setActiveTrafficRoute] = useState(null); 
     const [activeTrafficColor, setActiveTrafficColor] = useState('#EF4444');
     const [showInquiry, setShowInquiry] = useState(false);
+    
+    // NEW: State to hold the lot/land the user is inquiring about
+    const [inquiryTarget, setInquiryTarget] = useState(null);
 
     useEffect(() => {
         const style = document.createElement('style');
@@ -130,11 +133,11 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
     // --- DATA LOADING ---
     useEffect(() => {
         const loadData = async () => {
-            setProperties([]); // Clear old data to prevent ghosts
+            setProperties([]); 
+            setSubdivisionLots([]);
             
+            // 1. Fetch Properties (Pins)
             let query = supabase.from('properties').select('*').neq('status', 'sold');
-            
-            // Priority Logic: Specific Map ID trumps general Owner View
             if (activeMapId) {
                 query = query.eq('map_id', activeMapId);
             } else if (showOwnerData && userId) {
@@ -147,7 +150,15 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
                 if (props.length > 0 && !selectedProp) setMapTarget([props[0].lat, props[0].lng]);
             }
 
-            // Amenities Loading (Unlimited)
+            // 2. Fetch Subdivision Lots & Land
+            if (activeMapId) {
+                const { data: lots } = await supabase.from('lots').select('*').eq('map_id', activeMapId);
+                if (lots) {
+                    setSubdivisionLots(lots);
+                }
+            }
+
+            // 3. Fetch Amenities
             let allRows = [];
             let from = 0;
             const step = 1000;
@@ -212,7 +223,6 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
             return { ...a, _sub: rawSub, _type: rawType, dist: d, ...estimateTime(d) };
         }).sort((a, b) => a.dist - b.dist);
 
-        // 1. Highlighted Pins (from Quiz)
         if (highlightedAmenityIds.length > 0) {
             const highPins = sorted.filter(a => highlightedAmenityIds.includes(a.id));
             let otherPins = [];
@@ -226,12 +236,10 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
             return [...highPins, ...otherPins].filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
         }
 
-        // 2. Standard Filtering
         if (activePanelFilter) {
             const validTargets = DB_MAPPING[activePanelFilter] || [];
             return sorted.filter(a => validTargets.some(t => a._sub.includes(t) || a._type.includes(t))).slice(0, 4);
         } else {
-            // Default View
             const DEFAULTS = { 'police': 1, 'fire': 1, 'hospital': 1, 'clinic': 1, 'school': 2, 'college': 3 };
             const results = [];
             const usedIds = new Set();
@@ -310,12 +318,75 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
         }
     };
 
+    // --- LOT/LAND CLICK HANDLER ---
+    const handleInquireLot = (lot) => {
+        // Pass the lot as a "property" to the modal so it fills the inquiry form correctly
+        const lotProp = {
+            id: lot.id,
+            name: lot.lot_number,
+            price: lot.price,
+            type: lot.type,
+            // Use center of map or project as approximate location
+            lat: projectCoords[0], 
+            lng: projectCoords[1] 
+        };
+        setSelectedProp(lotProp); // Temporarily set as selected prop for the modal
+        setShowInquiry(true);
+    };
+
+    // Helper to get center if project coords aren't set
+    const projectCoords = properties.length > 0 ? [properties[0].lat, properties[0].lng] : [10.3157, 123.8854];
+
     return (
         <div className="relative w-full h-screen bg-gray-100 overflow-hidden">
             <MapContainer center={[10.3157, 123.8854]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false} markerZoomAnimation={false}>
                 <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png" />
                 <MapInvalidator /><MapController targetCoords={mapTarget} />
                 
+                {/* --- RENDER SUBDIVISION LOTS & LAND --- */}
+                {subdivisionLots.map(lot => (
+                    <Polygon 
+                        key={lot.id} 
+                        positions={lot.geometry} 
+                        pathOptions={{ 
+                            color: lot.type === 'boundary' ? '#3b82f6' : lot.type === 'land' ? '#f59e0b' : '#10b981', 
+                            fillColor: lot.type === 'boundary' ? '#3b82f6' : 
+                                      lot.type === 'land' ? (lot.status === 'common' ? '#fbbf24' : '#f59e0b') : // Amber for Land
+                                      lot.status === 'sold' ? '#ef4444' : 
+                                      lot.status === 'reserved' ? '#f59e0b' : '#10b981', 
+                            fillOpacity: lot.type === 'boundary' ? 0.05 : 0.4, 
+                            weight: lot.type === 'boundary' ? 2 : 1 
+                        }}
+                    >
+                        {/* FIX: Removed check for 'lot.type === lot', now renders for LAND too */}
+                        {lot.type !== 'boundary' && (
+                            <Popup>
+                                <div className="text-center p-1">
+                                    <strong className="block text-sm font-bold">{lot.lot_number}</strong>
+                                    <span className="text-xs uppercase text-gray-500 block mb-1">
+                                        {lot.type === 'land' && lot.status === 'common' ? 'Designated Area' : lot.status}
+                                    </span>
+                                    {/* Show Price if it's for sale */}
+                                    {lot.status !== 'common' && lot.price > 0 && <p className="text-sm font-mono text-emerald-600 font-bold">₱{lot.price.toLocaleString()}</p>}
+                                    
+                                    {/* Show Inquire Button if Available */}
+                                    {lot.status === 'available' && (
+                                        <button onClick={() => handleInquireLot(lot)} className="mt-2 bg-gray-900 text-white text-xs px-3 py-1.5 rounded-lg w-full font-bold hover:bg-black transition">
+                                            Inquire Now
+                                        </button>
+                                    )}
+                                </div>
+                            </Popup>
+                        )}
+                        {/* Tooltip for Name */}
+                        {lot.type !== 'boundary' && (
+                            <Tooltip direction="center" permanent={true} className="bg-transparent border-0 shadow-none font-bold text-[10px] text-white drop-shadow-md">
+                                {lot.lot_number}
+                            </Tooltip>
+                        )}
+                    </Polygon>
+                ))}
+
                 {routeData && <Polyline positions={routeData.path} pathOptions={{ className: 'marching-ants', color: '#3b82f6', weight: 5, opacity: 0.9 }} />}
                 {activeTrafficRoute && <Polyline positions={activeTrafficRoute} pathOptions={{ color: activeTrafficColor, weight: 6, opacity: 0.8, lineCap: 'round', dashArray: '1, 10' }} />}
 
@@ -357,7 +428,6 @@ export const VerityMap = ({ mapId, map_id, userId, showOwnerData }) => {
                 ))}
             </MapContainer>
 
-            {/* Pass Amenities to Quiz for Smart Description Generation */}
             <LifestyleQuiz 
                 properties={properties} 
                 amenities={allAmenities} 

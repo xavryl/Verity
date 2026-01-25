@@ -46,7 +46,6 @@ const CustomDrawStyles = () => (
             background: #3b82f6 !important;
             border-color: #2563eb !important;
         }
-        /* Fix for SweetAlert2 Z-Index issues over Leaflet */
         .swal2-container {
             z-index: 20000 !important;
         }
@@ -62,6 +61,25 @@ const MapSettings = () => {
     return null;
 };
 
+const FitBoundsToData = ({ lots }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (lots && lots.length > 0) {
+            try {
+                const group = new L.FeatureGroup();
+                lots.forEach(lot => {
+                    if (lot.geometry && Array.isArray(lot.geometry)) {
+                        L.polygon(lot.geometry).addTo(group);
+                    }
+                });
+                const bounds = group.getBounds();
+                if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50] });
+            } catch (e) { console.error(e); }
+        }
+    }, [lots, map]);
+    return null;
+};
+
 export const SubdivisionEditor = () => {
     const [searchParams] = useSearchParams();
     const mapId = searchParams.get('map_id');
@@ -70,8 +88,11 @@ export const SubdivisionEditor = () => {
     const [project, setProject] = useState(null);
     const [savedLots, setSavedLots] = useState([]); 
     const [loading, setLoading] = useState(true);
-    const [drawMode, setDrawMode] = useState('lot'); 
     
+    // Use Ref to keep track of current mode synchronously inside event handlers
+    const [drawMode, setDrawModeState] = useState('lot'); 
+    const drawModeRef = useRef('lot');
+
     const [manualInput, setManualInput] = useState('');
     const [manualPoints, setManualPoints] = useState([]);
 
@@ -80,8 +101,15 @@ export const SubdivisionEditor = () => {
     
     const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
 
+    // Helper to update both state and ref
+    const setDrawMode = (mode) => {
+        setDrawModeState(mode);
+        drawModeRef.current = mode;
+    };
+
     const refreshData = async () => {
         if (!mapId) return;
+        setLoading(true);
         const { data: proj } = await supabase.from('maps').select('*').eq('id', mapId).single();
         if (proj) setProject(proj);
         const { data: lots } = await supabase.from('lots').select('*').eq('map_id', mapId);
@@ -90,6 +118,8 @@ export const SubdivisionEditor = () => {
     };
 
     useEffect(() => { refreshData(); }, [mapId]);
+
+    const sanitizeGeometry = (latlngs) => latlngs.map(pt => ({ lat: pt.lat, lng: pt.lng }));
 
     const addManualPoint = () => {
         const clean = manualInput.replace(/\s/g, '');
@@ -115,77 +145,102 @@ export const SubdivisionEditor = () => {
     };
 
     const processNewShape = async (latlngs) => {
-        if (drawMode === 'boundary') {
+        const cleanGeometry = sanitizeGeometry(latlngs);
+        const currentMode = drawModeRef.current; // Use Ref to guarantee latest value
+
+        if (currentMode === 'boundary') {
             const { isConfirmed } = await Swal.fire({
-                title: 'Set Boundary?', 
-                text: "Save subdivision perimeter?", 
-                icon: 'question', 
-                showCancelButton: true, 
-                confirmButtonText: 'Yes, Save',
+                title: 'Set Boundary?', text: "Save subdivision perimeter?", icon: 'question', showCancelButton: true, confirmButtonText: 'Yes, Save',
+                customClass: { confirmButton: 'bg-blue-600 text-white px-4 py-2 rounded-lg font-bold mx-2', cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold mx-2', popup: 'rounded-xl shadow-2xl' }, buttonsStyling: false
+            });
+            if (isConfirmed) await saveShapeToDB({ lot_number: 'BOUNDARY', type: 'boundary', status: 'boundary', price: 0, geometry: cleanGeometry });
+        } 
+        
+        // --- LAND MODE ---
+        else if (currentMode === 'land') {
+            const choice = await Swal.fire({
+                title: 'Land Configuration',
+                text: 'Is this land for sale or just a designated area?',
+                icon: 'question',
+                showCancelButton: true,
+                showDenyButton: true,
+                confirmButtonText: 'For Sale',
+                denyButtonText: 'Designated Area',
                 cancelButtonText: 'Cancel',
-                // --- STYLING FIX ---
                 buttonsStyling: false,
-                customClass: {
-                    confirmButton: 'bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 mx-2',
-                    cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold hover:bg-gray-300 mx-2',
-                    popup: 'rounded-xl shadow-2xl'
+                customClass: { 
+                    confirmButton: 'bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold mx-2', 
+                    denyButton: 'bg-amber-500 text-white px-4 py-2 rounded-lg font-bold mx-2',
+                    cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold mx-2', 
+                    popup: 'rounded-xl shadow-2xl' 
                 }
             });
-            if (isConfirmed) {
-                await saveShapeToDB({ lot_number: 'BOUNDARY', type: 'boundary', status: 'boundary', price: 0, geometry: latlngs });
+
+            if (choice.isConfirmed) {
+                // FOR SALE
+                const { value: formValues } = await Swal.fire({
+                    title: 'Land for Sale',
+                    html: `
+                        <div class="flex flex-col gap-3 text-left">
+                            <div><label class="text-xs font-bold text-gray-500 uppercase">Land/Phase Name</label><input id="swal-lot" class="w-full p-2 border border-gray-300 rounded" placeholder="e.g. Commercial Block 1"></div>
+                            <div><label class="text-xs font-bold text-gray-500 uppercase">Price</label><input id="swal-price" type="number" class="w-full p-2 border border-gray-300 rounded" placeholder="0.00"></div>
+                        </div>
+                    `,
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Save', buttonsStyling: false,
+                    customClass: { confirmButton: 'bg-emerald-600 text-white px-5 py-2.5 rounded-lg font-bold mx-2', cancelButton: 'bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg font-bold mx-2', popup: 'rounded-2xl p-6 font-sans' },
+                    preConfirm: () => [document.getElementById('swal-lot').value, document.getElementById('swal-price').value]
+                });
+
+                if (formValues) {
+                    const [lotNum, price] = formValues;
+                    if (!lotNum) return;
+                    await saveShapeToDB({ lot_number: lotNum, type: 'land', status: 'available', price: parseFloat(price) || 0, geometry: cleanGeometry });
+                }
+
+            } else if (choice.isDenied) {
+                // COMMON AREA
+                const { value: landName } = await Swal.fire({
+                    title: 'Name this Area',
+                    input: 'text',
+                    inputPlaceholder: 'e.g. Central Park, Phase 2 Future',
+                    showCancelButton: true,
+                    confirmButtonText: 'Save',
+                    customClass: { confirmButton: 'bg-amber-600 text-white px-4 py-2 rounded-lg font-bold mx-2', cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold mx-2', popup: 'rounded-xl shadow-2xl' }, buttonsStyling: false
+                });
+                
+                if (landName) {
+                    await saveShapeToDB({ lot_number: landName, type: 'land', status: 'common', price: 0, geometry: cleanGeometry });
+                }
             }
-        } else {
-            // --- STYLING FIX FOR NEW LOT DETAILS ---
+        }
+        // --- LOT MODE ---
+        else {
             const { value: formValues } = await Swal.fire({
                 title: 'New Lot Details',
                 html: `
                     <div class="flex flex-col gap-3 text-left">
-                        <div>
-                            <label class="text-xs font-bold text-gray-500 uppercase">Lot Number</label>
-                            <input id="swal-lot" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition" placeholder="e.g. Block 1 Lot 5">
-                        </div>
-                        <div>
-                            <label class="text-xs font-bold text-gray-500 uppercase">Price</label>
-                            <input id="swal-price" type="number" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition" placeholder="0.00">
-                        </div>
-                        <div>
-                            <label class="text-xs font-bold text-gray-500 uppercase">Status</label>
-                            <select id="swal-status" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition bg-white">
-                                <option value="available">Available</option>
-                                <option value="reserved">Reserved</option>
-                                <option value="sold">Sold</option>
-                            </select>
-                        </div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Lot Number</label><input id="swal-lot" class="w-full p-2 border border-gray-300 rounded" placeholder="e.g. Block 1 Lot 5"></div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Price</label><input id="swal-price" type="number" class="w-full p-2 border border-gray-300 rounded" placeholder="0.00"></div>
+                        <div><label class="text-xs font-bold text-gray-500 uppercase">Status</label><select id="swal-status" class="w-full p-2 border border-gray-300 rounded bg-white"><option value="available">Available</option><option value="reserved">Reserved</option><option value="sold">Sold</option></select></div>
                     </div>
                 `,
-                focusConfirm: false, 
-                showCancelButton: true,
-                confirmButtonText: 'Save Lot',
-                cancelButtonText: 'Cancel',
-                buttonsStyling: false, // DISABLE DEFAULT STYLES
-                customClass: {
-                    confirmButton: 'bg-emerald-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-emerald-700 transition mx-2',
-                    cancelButton: 'bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition mx-2',
-                    popup: 'rounded-2xl p-6 font-sans'
-                },
-                preConfirm: () => [
-                    document.getElementById('swal-lot').value, 
-                    document.getElementById('swal-price').value, 
-                    document.getElementById('swal-status').value
-                ]
+                focusConfirm: false, showCancelButton: true, confirmButtonText: 'Save Lot', buttonsStyling: false,
+                customClass: { confirmButton: 'bg-emerald-600 text-white px-5 py-2.5 rounded-lg font-bold mx-2', cancelButton: 'bg-gray-100 text-gray-600 px-5 py-2.5 rounded-lg font-bold mx-2', popup: 'rounded-2xl p-6 font-sans' },
+                preConfirm: () => [document.getElementById('swal-lot').value, document.getElementById('swal-price').value, document.getElementById('swal-status').value]
             });
 
             if (formValues) {
                 const [lotNum, price, status] = formValues;
                 if (!lotNum) return; 
-                await saveShapeToDB({ lot_number: lotNum, type: 'lot', status: status, price: parseFloat(price) || 0, geometry: latlngs });
+                await saveShapeToDB({ lot_number: lotNum, type: 'lot', status: status, price: parseFloat(price) || 0, geometry: cleanGeometry });
             }
         }
     };
 
     const onCreated = async (e) => {
         const layer = e.layer;
-        const latlngs = layer.getLatLngs()[0];
+        const rawLatLngs = layer.getLatLngs();
+        const latlngs = Array.isArray(rawLatLngs[0]) ? rawLatLngs[0] : rawLatLngs;
         featureGroupRef.current.removeLayer(layer);
         await processNewShape(latlngs);
     };
@@ -193,7 +248,8 @@ export const SubdivisionEditor = () => {
     const saveShapeToDB = async (payload) => {
         setLoading(true);
         const { error } = await supabase.from('lots').insert([{ ...payload, map_id: mapId }]);
-        if (!error) { Toast.fire({ icon: 'success', title: 'Shape Saved!' }); refreshData(); }
+        if (!error) { Toast.fire({ icon: 'success', title: 'Shape Saved!' }); refreshData(); } 
+        else { Swal.fire('Error', error.message, 'error'); }
         setLoading(false);
     };
 
@@ -202,7 +258,10 @@ export const SubdivisionEditor = () => {
         const updates = [];
         layers.eachLayer((layer) => {
             const id = layer.options.id; 
-            if (id) updates.push({ id: id, geometry: layer.getLatLngs()[0] });
+            const rawLatLngs = layer.getLatLngs();
+            const latlngs = Array.isArray(rawLatLngs[0]) ? rawLatLngs[0] : rawLatLngs;
+            const cleanGeometry = sanitizeGeometry(latlngs);
+            if (id) updates.push({ id: id, geometry: cleanGeometry });
         });
         if (updates.length > 0) {
             setLoading(true);
@@ -216,23 +275,8 @@ export const SubdivisionEditor = () => {
         const layers = e.layers;
         const idsToDelete = [];
         layers.eachLayer((layer) => { if (layer.options.id) idsToDelete.push(layer.options.id); });
-        
         if (idsToDelete.length > 0) {
-            const { isConfirmed } = await Swal.fire({ 
-                title: 'Delete Selected?', 
-                text: "You won't be able to revert this!",
-                icon: 'warning', 
-                showCancelButton: true, 
-                confirmButtonText: 'Yes, delete it',
-                cancelButtonText: 'Cancel',
-                buttonsStyling: false,
-                customClass: {
-                    confirmButton: 'bg-red-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-700 mx-2',
-                    cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold hover:bg-gray-300 mx-2',
-                    popup: 'rounded-xl'
-                }
-            });
-
+            const { isConfirmed } = await Swal.fire({ title: 'Delete Selected?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes', buttonsStyling: false, customClass: { confirmButton: 'bg-red-600 text-white px-4 py-2 rounded-lg font-bold mx-2', cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold mx-2', popup: 'rounded-xl' } });
             if (isConfirmed) {
                 setLoading(true);
                 await supabase.from('lots').delete().in('id', idsToDelete);
@@ -243,38 +287,19 @@ export const SubdivisionEditor = () => {
     };
     
     const handleDelete = async (id) => {
-        const confirm = await Swal.fire({ 
-            title: 'Delete shape?', 
-            text: "This cannot be undone.",
-            icon: 'warning', 
-            showCancelButton: true, 
-            confirmButtonText: 'Yes, Delete',
-            cancelButtonText: 'Cancel',
-            buttonsStyling: false,
-            customClass: {
-                confirmButton: 'bg-red-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-700 mx-2',
-                cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold hover:bg-gray-300 mx-2',
-                popup: 'rounded-xl'
-            }
-        });
-
+        const confirm = await Swal.fire({ title: 'Delete shape?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes', buttonsStyling: false, customClass: { confirmButton: 'bg-red-600 text-white px-4 py-2 rounded-lg font-bold mx-2', cancelButton: 'bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-bold mx-2', popup: 'rounded-xl' } });
         if (confirm.isConfirmed) {
             await supabase.from('lots').delete().eq('id', id);
             refreshData();
-            Swal.fire({
-                title: 'Deleted!',
-                icon: 'success',
-                timer: 1500,
-                showConfirmButton: false,
-                customClass: { popup: 'rounded-xl' }
-            });
+            Swal.fire({ title: 'Deleted!', icon: 'success', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-xl' } });
         }
     };
 
     const handleDownloadTemplate = () => {
         const rows = [
             { "Lot Number": "Block 1 Lot 1", "Price": 1500000, "Status": "available", "Type": "lot", "Points": "10.315,123.885 ; 10.316,123.886 ; 10.317,123.885" },
-            { "Lot Number": "BOUNDARY", "Price": 0, "Status": "boundary", "Type": "boundary", "Points": "10.314,123.884 ; 10.318,123.884 ; 10.318,123.888 ; 10.314,123.888" }
+            { "Lot Number": "BOUNDARY", "Price": 0, "Status": "boundary", "Type": "boundary", "Points": "10.314,123.884 ; 10.318,123.884 ; 10.318,123.888 ; 10.314,123.888" },
+            { "Lot Number": "Phase 2 Land", "Price": 5000000, "Status": "available", "Type": "land", "Points": "10.320,123.890 ; 10.325,123.890 ; 10.325,123.895" }
         ];
         const ws = XLSX.utils.json_to_sheet(rows);
         ws['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 50 }];
@@ -305,6 +330,7 @@ export const SubdivisionEditor = () => {
                         let type = row['Type']?.toLowerCase() || 'lot';
                         let lotNum = row['Lot Number'] || `Lot ${Math.floor(Math.random()*1000)}`;
                         if (lotNum.toUpperCase() === 'BOUNDARY') type = 'boundary';
+                        if (type.includes('land') || lotNum.toLowerCase().includes('phase')) type = 'land';
 
                         newLots.push({
                             map_id: mapId,
@@ -323,12 +349,9 @@ export const SubdivisionEditor = () => {
                 const { error } = await supabase.from('lots').insert(newLots);
                 if (!error) Swal.fire({ title: 'Success', text: `Imported ${newLots.length} shapes successfully!`, icon: 'success', confirmButtonColor: '#10b981' });
                 else Swal.fire('Error', error.message, 'error');
-                
                 setLoading(false);
                 refreshData();
-            } else {
-                Swal.fire('Error', 'No valid geometry found.', 'warning');
-            }
+            } else Swal.fire('Error', 'No valid geometry found.', 'warning');
         };
         reader.readAsBinaryString(file);
         e.target.value = ""; 
@@ -340,18 +363,14 @@ export const SubdivisionEditor = () => {
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-gray-900">
             <CustomDrawStyles />
-            {/* SIDEBAR */}
-            <div className="w-80 bg-white shadow-2xl z-[1000] flex flex-col border-r border-gray-200">
+            <div className="w-80 bg-white shadow-2xl z-[5000] flex flex-col border-r border-gray-200 relative">
                 <div className="p-5 border-b border-gray-100 bg-gray-50">
-                    <button onClick={() => navigate('/agent')} className="flex items-center gap-1 text-gray-500 hover:text-gray-900 text-xs font-bold uppercase tracking-wider mb-2 transition">
-                        <ArrowLeft size={12}/> Back to Dashboard
-                    </button>
+                    <button onClick={() => navigate('/agent')} className="flex items-center gap-1 text-gray-500 hover:text-gray-900 text-xs font-bold uppercase tracking-wider mb-2 transition"><ArrowLeft size={12}/> Back to Dashboard</button>
                     <h1 className="text-xl font-bold text-gray-900 leading-tight">Subdivision Builder</h1>
                     <p className="text-sm text-gray-500 mt-1 truncate">Project: <span className="font-bold text-gray-700">{project?.name}</span></p>
                 </div>
 
                 <div className="p-6 flex-1 overflow-y-auto">
-                    {/* DRAW MODE */}
                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Drawing Mode</h3>
                     <div className="flex flex-col gap-2 mb-6">
                         <button onClick={() => setDrawMode('boundary')} className={`flex items-center gap-3 p-3 rounded-xl border transition ${drawMode === 'boundary' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
@@ -362,23 +381,21 @@ export const SubdivisionEditor = () => {
                             <div className={`w-4 h-4 rounded-sm border-2 ${drawMode === 'lot' ? 'border-emerald-500 bg-emerald-500' : 'border-gray-400'}`}></div>
                             <div className="text-left"><p className="text-sm font-bold">Individual Lot</p></div>
                         </button>
+                        <button onClick={() => setDrawMode('land')} className={`flex items-center gap-3 p-3 rounded-xl border transition ${drawMode === 'land' ? 'bg-amber-50 border-amber-500 text-amber-700' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+                            <div className={`w-4 h-4 rounded-sm border-2 ${drawMode === 'land' ? 'border-amber-500 bg-amber-500' : 'border-gray-400'}`}></div>
+                            <div className="text-left"><p className="text-sm font-bold">Land Area / Phase</p></div>
+                        </button>
                     </div>
 
-                    {/* IMPORT TOOLS */}
                     <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-xl">
                         <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Bulk Import</h3>
                         <div className="flex gap-2">
-                             <button onClick={handleDownloadTemplate} className="flex-1 bg-white border border-gray-300 text-gray-600 py-2 rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center justify-center gap-1">
-                                <Download size={14}/> Template
-                            </button>
-                            <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 flex items-center justify-center gap-1">
-                                <FileSpreadsheet size={14}/> Import
-                            </button>
+                             <button onClick={handleDownloadTemplate} className="flex-1 bg-white border border-gray-300 text-gray-600 py-2 rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center justify-center gap-1"><Download size={14}/> Template</button>
+                            <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 flex items-center justify-center gap-1"><FileSpreadsheet size={14}/> Import</button>
                             <input ref={fileInputRef} type="file" className="hidden" accept=".xlsx,.csv" onChange={handleImport} />
                         </div>
                     </div>
 
-                    {/* MANUAL COORDS */}
                     <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-xl">
                         <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Manual Coordinates</h3>
                         <div className="flex gap-2 mb-2">
@@ -397,7 +414,6 @@ export const SubdivisionEditor = () => {
                         )}
                     </div>
 
-                    {/* Display boundaries count instead of single boundary control */}
                     <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-xl animate-in fade-in slide-in-from-top-2">
                         <div className="flex items-start gap-3 mb-3">
                             <ShieldCheck size={20} className="text-blue-600 mt-0.5" />
@@ -410,9 +426,9 @@ export const SubdivisionEditor = () => {
                 </div>
             </div>
 
-            {/* MAP */}
             <div className="flex-1 relative">
-                <MapContainer center={center} zoom={18} className="h-full w-full">
+                <MapContainer key={mapId} center={center} zoom={18} className="h-full w-full">
+                    <FitBoundsToData lots={savedLots} />
                     <MapSettings />
                     <LayersControl position="topright">
                         <LayersControl.BaseLayer checked name="Street Map"><TileLayer maxZoom={22} url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"/></LayersControl.BaseLayer>
@@ -428,29 +444,33 @@ export const SubdivisionEditor = () => {
                     )}
 
                     <FeatureGroup ref={featureGroupRef}>
-                        <EditControl position="topright" onCreated={onCreated} onEdited={onEdited} onDeleted={onDeleted} draw={{ rectangle: false, circle: false, circlemarker: false, marker: false, polyline: false, polygon: { allowIntersection: false, shapeOptions: { color: drawMode === 'boundary' ? '#3b82f6' : '#10b981' } } }} />
+                        {/* FIX: key={drawMode} forces tool update so 'Land' color applies immediately */}
+                        <EditControl key={drawMode} position="topright" onCreated={onCreated} onEdited={onEdited} onDeleted={onDeleted} 
+                            draw={{ 
+                                rectangle: false, circle: false, circlemarker: false, marker: false, polyline: false, 
+                                polygon: { allowIntersection: false, shapeOptions: { color: drawMode === 'boundary' ? '#3b82f6' : drawMode === 'land' ? '#f59e0b' : '#10b981' } } 
+                            }} 
+                        />
                         {savedLots.sort((a, b) => (a.type === 'boundary' ? -1 : 1)).map((lot) => (
-                            <Polygon key={lot.id} positions={lot.geometry} pathOptions={{ id: lot.id, color: lot.type === 'boundary' ? '#3b82f6' : '#10b981', fillColor: lot.type === 'boundary' ? '#3b82f6' : lot.status === 'sold' ? '#ef4444' : lot.status === 'reserved' ? '#f59e0b' : '#10b981', fillOpacity: lot.type === 'boundary' ? 0.1 : 0.4, weight: 2 }}>
-                                {lot.type === 'lot' && (
-                                    <Popup>
-                                        <div className="text-center">
-                                            <strong className="block text-sm">{lot.lot_number}</strong>
-                                            <span className="text-xs uppercase text-gray-500 block mb-2">{lot.status}</span>
-                                            {lot.price > 0 && <p className="text-xs font-mono text-emerald-600 font-bold mb-2">₱{lot.price.toLocaleString()}</p>}
-                                            <button onClick={() => handleDelete(lot.id)} className="bg-red-50 text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-100 w-full flex items-center justify-center gap-1"><Trash2 size={12}/> Delete</button>
-                                        </div>
-                                    </Popup>
-                                )}
-                                {/* Allow popup for boundary to enable deleting specific boundaries */}
-                                {lot.type === 'boundary' && (
-                                    <Popup>
-                                        <div className="text-center">
-                                            <strong className="block text-sm">Boundary</strong>
-                                            <button onClick={() => handleDelete(lot.id)} className="bg-red-50 text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-100 w-full flex items-center justify-center gap-1 mt-2"><Trash2 size={12}/> Delete</button>
-                                        </div>
-                                    </Popup>
-                                )}
-                                {lot.type === 'lot' && <Tooltip direction="center" permanent={true} className="bg-transparent border-0 shadow-none font-bold text-xs text-white drop-shadow-md">{lot.lot_number}</Tooltip>}
+                            <Polygon 
+                                key={lot.id} 
+                                positions={lot.geometry} 
+                                pathOptions={{ 
+                                    id: lot.id, 
+                                    color: lot.type === 'boundary' ? '#3b82f6' : lot.type === 'land' ? '#f59e0b' : '#10b981', 
+                                    fillColor: lot.type === 'boundary' ? '#3b82f6' : lot.status === 'common' ? '#fbbf24' : lot.status === 'sold' ? '#ef4444' : lot.status === 'reserved' ? '#f59e0b' : '#10b981', 
+                                    fillOpacity: lot.type === 'boundary' ? 0.1 : 0.4, 
+                                    weight: 2 
+                                }}>
+                                <Popup>
+                                    <div className="text-center">
+                                        <strong className="block text-sm">{lot.lot_number}</strong>
+                                        <span className="text-xs uppercase text-gray-500 block mb-2">{lot.type === 'land' && lot.status === 'common' ? 'Designated Area' : lot.status}</span>
+                                        {lot.price > 0 && <p className="text-xs font-mono text-emerald-600 font-bold mb-2">₱{lot.price.toLocaleString()}</p>}
+                                        <button onClick={() => handleDelete(lot.id)} className="bg-red-50 text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-100 w-full flex items-center justify-center gap-1"><Trash2 size={12}/> Delete</button>
+                                    </div>
+                                </Popup>
+                                <Tooltip direction="center" permanent={true} className="bg-transparent border-0 shadow-none font-bold text-xs text-white drop-shadow-md">{lot.lot_number}</Tooltip>
                             </Polygon>
                         ))}
                     </FeatureGroup>
