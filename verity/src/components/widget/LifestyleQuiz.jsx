@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom'; // 1. Import to read URL
+import { useSearchParams } from 'react-router-dom'; 
 import { 
     Sparkles, X, Dumbbell, Dog, GraduationCap, ShieldCheck, 
     ShoppingBag, BrainCircuit, ArrowRight, RotateCcw, Loader2, Quote, Check,
@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 
 export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSelect }) => {
-    // 2. Get the specific Project ID from the URL
     const [searchParams] = useSearchParams();
     const activeMapId = searchParams.get('map_id'); 
 
@@ -18,20 +17,25 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
     const [activeIndex, setActiveIndex] = useState(0);
     const [isTransitioning, setIsTransitioning] = useState(false);
 
-    // 3. STRICT FILTERING: Ensure this widget ONLY sees properties for this specific Map ID
-    // This protects User A from seeing User B's properties, even if the parent passes them.
+    // 1. STRICT FILTER: Only see properties for the Active Map
     const activeProperties = useMemo(() => {
         if (!activeMapId) return properties;
         return properties.filter(p => p.map_id === activeMapId);
     }, [properties, activeMapId]);
 
     const PROFILES = [
-        { id: 'student', label: 'Student', icon: BookOpen, color: 'text-pink-600', bg: 'bg-pink-50' },
-        { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-600', bg: 'bg-green-50' },
-        { id: 'pets', label: 'Pet Parent', icon: Dog, color: 'text-orange-500', bg: 'bg-orange-50' },
-        { id: 'fitness', label: 'Fitness', icon: Dumbbell, color: 'text-blue-500', bg: 'bg-blue-50' },
-        { id: 'safety', label: 'Safety', icon: ShieldCheck, color: 'text-red-500', bg: 'bg-red-50' },
-        { id: 'convenience', label: 'Urban', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50' }
+        { id: 'student', label: 'Student', icon: BookOpen, color: 'text-pink-600', bg: 'bg-pink-50', 
+          desc: "Perfect for students with easy access to universities and study hubs." },
+        { id: 'family', label: 'Family', icon: GraduationCap, color: 'text-green-600', bg: 'bg-green-50', 
+          desc: "A family-friendly environment near top-rated schools and parks." },
+        { id: 'pets', label: 'Pet Parent', icon: Dog, color: 'text-orange-500', bg: 'bg-orange-50', 
+          desc: "Great for pets, featuring open spaces and nearby vet clinics." },
+        { id: 'fitness', label: 'Fitness', icon: Dumbbell, color: 'text-blue-500', bg: 'bg-blue-50', 
+          desc: "Ideal for an active lifestyle, close to gyms and sports centers." },
+        { id: 'safety', label: 'Safety', icon: ShieldCheck, color: 'text-red-500', bg: 'bg-red-50', 
+          desc: "Located in a secure area with proximity to police and fire stations." },
+        { id: 'convenience', label: 'Urban', icon: ShoppingBag, color: 'text-purple-500', bg: 'bg-purple-50', 
+          desc: "Enjoy city living with malls, groceries, and dining just steps away." }
     ];
 
     const toggleTag = (id) => {
@@ -49,19 +53,58 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
         setSelectedTags(newTags);
     };
 
+    // --- SMART GENERATOR: FIXES "ASD" / MISSING DESCRIPTIONS ---
+    const enrichPropertyData = (property, tags) => {
+        const isGarbage = !property.description || property.description.length < 15;
+
+        // A. Generate a Smart Headline
+        let smartHeadline = property.headline;
+        if (!smartHeadline || isGarbage) {
+            const mainTag = tags.length > 0 ? tags[0].charAt(0).toUpperCase() + tags[0].slice(1) : 'Lifestyle';
+            smartHeadline = `Top ${mainTag} Choice`;
+        }
+
+        // B. Generate Smart Body Text
+        let smartBody = property.description;
+        if (isGarbage) {
+            if (tags.length > 0) {
+                const profile = PROFILES.find(p => p.id === tags[0]);
+                smartBody = profile ? profile.desc : "Selected based on your specific lifestyle preferences.";
+                
+                if (tags.length > 1) {
+                    const secondProfile = PROFILES.find(p => p.id === tags[1]);
+                    if (secondProfile) smartBody += ` Also ${secondProfile.desc.charAt(0).toLowerCase() + secondProfile.desc.slice(1)}`;
+                }
+            } else {
+                smartBody = "This property matches your selected location preferences.";
+            }
+        } else {
+            smartBody = property.description.length > 120 
+                ? property.description.substring(0, 120) + "..." 
+                : property.description;
+        }
+
+        return {
+            ...property,
+            headline: smartHeadline,
+            body: smartBody,
+            highlights: property.highlights || tags
+        };
+    };
+
     const runAnalysis = async () => {
         if (selectedTags.length === 0) return;
         
-        // Safety: If this specific map has no properties, don't bother the AI
         if (activeProperties.length === 0) {
-            alert("No properties found for this specific project.");
+            alert("No properties found for this project.");
             return;
         }
 
         setStep('loading');
 
+        // --- FIX: RESTORED FULL PAYLOAD STRUCTURE ---
+        // The backend requires ALL 4 priorities. Missing fields cause Error 422.
         const payload = {
-            // 4. Send the Map ID to the AI so it knows which "Bucket" to search
             filter_map_id: activeMapId, 
             personas: selectedTags, 
             safety_priority: (selectedTags.includes('safety') || selectedTags.includes('family')) ? 1.0 : 0.0,
@@ -71,7 +114,6 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
         };
 
         try {
-            // This URL stays the same for ALL 100 users. It is a shared service.
             const API_URL = 'https://verity-ai.onrender.com'; 
             
             const response = await fetch(`${API_URL}/recommend`, {
@@ -80,41 +122,38 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
                 body: JSON.stringify(payload)
             });
             
-            if (!response.ok) throw new Error("AI Server Error");
-            const data = await response.json();
+            const data = await response.ok ? await response.json() : { matches: [] };
             
-            // 5. SECURITY FILTER:
-            // Even if the AI makes a mistake and returns a property from Map 1,
-            // we filter strictly against 'activeProperties' (Map 2) to ensure it is never displayed.
-            const enrichedMatches = data.matches.map(match => {
-                // We only look for the ID inside 'activeProperties'
+            // 1. FILTER & ENRICH
+            let enrichedMatches = data.matches.map(match => {
                 const realProp = activeProperties.find(p => String(p.id) === String(match.id));
-                
-                if (!realProp) return null; // Discard if it belongs to a different map
-                return { ...match, ...realProp }; 
+                if (!realProp) return null;
+                return enrichPropertyData({ ...match, ...realProp }, selectedTags); 
             }).filter(Boolean);
 
-            if (enrichedMatches.length > 0) {
-                setMatches(enrichedMatches);
-                setActiveIndex(0); 
-                if (data.matched_ids && onFilter) onFilter(data.matched_ids);
-                if (onRecommend) onRecommend(enrichedMatches[0]);
-                setStep('result');
-            } else {
-                // Fallback: If AI returned nothing valid for this map, show local properties
-                console.log("AI returned no valid matches for this map ID. Showing default map properties.");
-                setMatches(activeProperties);
-                setActiveIndex(0);
-                if (onRecommend) onRecommend(activeProperties[0]);
-                setStep('result');
+            // 2. FALLBACK
+            if (enrichedMatches.length === 0) {
+                console.log("AI returned empty/invalid. Generating smart local fallback.");
+                enrichedMatches = activeProperties.slice(0, 5).map(p => enrichPropertyData(p, selectedTags));
             }
+
+            setMatches(enrichedMatches);
+            setActiveIndex(0); 
+            
+            if (enrichedMatches.length > 0) {
+                if (onRecommend) onRecommend(enrichedMatches[0]);
+            }
+            
+            setStep('result');
+
         } catch (err) {
             console.error(err);
-            // Fallback for offline mode using ONLY this map's properties
+            // Offline Fallback
             if(activeProperties.length > 0) {
-                 setMatches(activeProperties);
+                 const fallback = activeProperties.slice(0, 5).map(p => enrichPropertyData(p, selectedTags));
+                 setMatches(fallback);
                  setStep('result');
-                 if (onRecommend) onRecommend(activeProperties[0]);
+                 if (onRecommend) onRecommend(fallback[0]);
             } else {
                 setStep('quiz');
             }
@@ -197,9 +236,9 @@ export const LifestyleQuiz = ({ properties, onRecommend, onFilter, onPersonaSele
                         <div key={activeIndex} className={`bg-violet-50 border border-violet-100 rounded-xl p-4 relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-2 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
                             <Quote size={20} className="absolute -top-2 -left-2 text-violet-200 fill-violet-200 bg-white rounded-full p-0.5 border border-violet-100" />
                             <h5 className="text-violet-800 font-bold text-sm mb-1">{activeMatch.headline || activeMatch.name}</h5>
-                            <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body || activeMatch.description?.substring(0, 100) || "Great match for your lifestyle."}..."</p>
+                            <p className="text-xs text-gray-700 leading-relaxed font-medium mb-3">"{activeMatch.body}"</p>
                             <div className="flex flex-wrap gap-1.5">
-                                {activeMatch.highlights?.map((h, i) => (
+                                {(activeMatch.highlights || selectedTags).map((h, i) => (
                                     <span key={i} className="text-[9px] bg-white border border-violet-100 px-2 py-1 rounded-md text-violet-600 shadow-sm animate-in fade-in zoom-in duration-500">
                                         {h.split ? h.split('(')[0] : h}
                                     </span>
