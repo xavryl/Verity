@@ -1,14 +1,13 @@
 import { useState, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'; 
 import { 
-    Users, Clock, CheckCircle2, DollarSign, 
+    Users, Clock, DollarSign, 
     Map as MapIcon, 
     List, LayoutGrid, Search, Mail, ToggleRight,
-    Trash2, Archive, CheckSquare, Square, Phone, Power
+    Trash2, CheckSquare, Square, Phone, Power
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useLeads } from '../../context/LeadContext';
-// NEW: Import supabase to update the lot status
 import { supabase } from '../../lib/supabase'; 
 
 // --- HELPER: COPY FUNCTION ---
@@ -22,11 +21,20 @@ const copyToClipboard = (text, label) => {
     Toast.fire({ icon: 'success', title: `${label} Copied!` });
 };
 
-// ... (LeadCard component remains same) ...
-// ... (KanbanColumn component remains same) ...
-// ... (ListView component remains same) ...
-// ... (StatCard component remains same) ...
+// --- SUB-COMPONENT: STAT CARD ---
+const StatCard = ({ label, value, icon: Icon, color, bg }) => (
+    <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm flex items-center justify-between hover:border-slate-600 hover:shadow-md transition duration-200 group">
+        <div className="flex items-center gap-4">
+            <div className={`p-2.5 rounded-lg bg-slate-900 ${color} ring-1 ring-white/5`}>
+                <Icon size={18} />
+            </div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider group-hover:text-slate-300 transition-colors">{label}</span>
+        </div>
+        <span className={`text-2xl font-black ${color}`}>{value}</span>
+    </div>
+);
 
+// --- SUB-COMPONENT: LEAD CARD (KANBAN) ---
 const LeadCard = ({ lead, index, isSelected, onSelect }) => { 
     const { setActiveLeadId } = useLeads();
   
@@ -101,6 +109,7 @@ const LeadCard = ({ lead, index, isSelected, onSelect }) => {
     );
 };
 
+// --- SUB-COMPONENT: KANBAN COLUMN ---
 const KanbanColumn = ({ id, title, count, color, leads, selectedIds, onToggleSelect }) => (
     <div className="flex-shrink-0 w-80 flex flex-col h-full">
         <div className={`flex items-center justify-between mb-4 pb-2 border-b-2 ${color}`}>
@@ -130,92 +139,113 @@ const KanbanColumn = ({ id, title, count, color, leads, selectedIds, onToggleSel
     </div>
 );
 
-const ListView = ({ leads, selectedIds, onToggleSelect, onDeleteSingle, onStatusChange }) => (
-    <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden flex-1 flex flex-col">
-        <div className="overflow-auto flex-1">
-            <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-900 border-b border-slate-700 sticky top-0 z-10">
-                    <tr>
-                        <th className="p-4 w-10"></th>
-                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[250px]">Lead Name</th>
-                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Status</th>
-                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[200px]">Property</th>
-                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Contact</th>
-                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[150px]">Date</th>
-                        <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                    {leads.length === 0 ? (
-                        <tr><td colSpan="7" className="p-10 text-center text-slate-500 italic">No leads found in this filter.</td></tr>
-                    ) : (
-                        leads.map((lead) => (
-                            <tr key={lead.id} className="hover:bg-slate-700/30 transition group">
-                                <td className="p-4">
-                                    <button onClick={() => onToggleSelect(lead.id)} className="text-slate-500 hover:text-emerald-400 transition">
-                                        {selectedIds.has(lead.id) ? <CheckSquare size={18} className="text-emerald-500"/> : <Square size={18}/>}
-                                    </button>
-                                </td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-slate-300 text-xs border border-slate-600 group-hover:border-emerald-500/50 group-hover:text-emerald-400 transition">
-                                            {lead.name.charAt(0).toUpperCase()}
+// --- SUB-COMPONENT: LIST VIEW (UPDATED CLICK HANDLING) ---
+const ListView = ({ leads, selectedIds, onToggleSelect, onDeleteSingle, onStatusChange }) => {
+    const { setActiveLeadId } = useLeads();
+
+    return (
+        <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden flex-1 flex flex-col">
+            <div className="overflow-auto flex-1">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-900 border-b border-slate-700 sticky top-0 z-10">
+                        <tr>
+                            <th className="p-4 w-10"></th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[250px]">Lead Name</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[120px]">Status</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[200px]">Property</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Contact</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider w-[150px]">Date</th>
+                            <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                        {leads.length === 0 ? (
+                            <tr><td colSpan="7" className="p-10 text-center text-slate-500 italic">No leads found in this filter.</td></tr>
+                        ) : (
+                            leads.map((lead) => (
+                                <tr 
+                                    key={lead.id} 
+                                    className="hover:bg-slate-700/30 transition group"
+                                >
+                                    {/* 1. CHECKBOX (No Action) */}
+                                    <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                                        <button onClick={() => onToggleSelect(lead.id)} className="text-slate-500 hover:text-emerald-400 transition">
+                                            {selectedIds.has(lead.id) ? <CheckSquare size={18} className="text-emerald-500"/> : <Square size={18}/>}
+                                        </button>
+                                    </td>
+
+                                    {/* 2. NAME (CLICKABLE) */}
+                                    <td className="p-4 cursor-pointer" onClick={() => setActiveLeadId(lead.id)}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-bold text-slate-300 text-xs border border-slate-600 group-hover:border-emerald-500/50 group-hover:text-emerald-400 transition">
+                                                {lead.name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-white text-sm group-hover:text-emerald-400 transition">{lead.name}</p>
+                                                <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{lead.msg}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-bold text-white text-sm group-hover:text-emerald-400 transition">{lead.name}</p>
-                                            <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{lead.msg}</p>
+                                    </td>
+
+                                    {/* 3. STATUS (No Action on cell, only dropdown) */}
+                                    <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                                        <select 
+                                            value={lead.status}
+                                            onChange={(e) => onStatusChange(lead.id, lead.status, e.target.value)}
+                                            className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full border-0 cursor-pointer transition shadow-sm hover:shadow outline-none ${
+                                                lead.status === 'new' ? 'bg-blue-900/30 text-blue-400 ring-1 ring-blue-500/20' :
+                                                lead.status === 'contacted' ? 'bg-orange-900/30 text-orange-400 ring-1 ring-orange-500/20' :
+                                                lead.status === 'viewing' ? 'bg-violet-900/30 text-violet-400 ring-1 ring-violet-500/20' :
+                                                'bg-emerald-900/30 text-emerald-400 ring-1 ring-emerald-500/20'
+                                            }`}
+                                        >
+                                            <option value="new" className="bg-slate-800">New</option>
+                                            <option value="contacted" className="bg-slate-800">Contacted</option>
+                                            <option value="viewing" className="bg-slate-800">Viewing</option>
+                                            <option value="closed" className="bg-slate-800">Closed</option>
+                                        </select>
+                                    </td>
+
+                                    {/* 4. PROPERTY (CLICKABLE) */}
+                                    <td className="p-4 cursor-pointer" onClick={() => setActiveLeadId(lead.id)}>
+                                        <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium">
+                                            <MapIcon size={12} className="text-blue-400"/>
+                                            <span className="truncate max-w-[180px]">{lead.prop}</span>
                                         </div>
-                                    </div>
-                                </td>
-                                <td className="p-4">
-                                    <select 
-                                        value={lead.status}
-                                        onChange={(e) => onStatusChange(lead.id, lead.status, e.target.value)}
-                                        className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full border-0 cursor-pointer transition shadow-sm hover:shadow outline-none ${
-                                            lead.status === 'new' ? 'bg-blue-900/30 text-blue-400 ring-1 ring-blue-500/20' :
-                                            lead.status === 'contacted' ? 'bg-orange-900/30 text-orange-400 ring-1 ring-orange-500/20' :
-                                            lead.status === 'viewing' ? 'bg-violet-900/30 text-violet-400 ring-1 ring-violet-500/20' :
-                                            'bg-emerald-900/30 text-emerald-400 ring-1 ring-emerald-500/20'
-                                        }`}
-                                    >
-                                        <option value="new" className="bg-slate-800">New</option>
-                                        <option value="contacted" className="bg-slate-800">Contacted</option>
-                                        <option value="viewing" className="bg-slate-800">Viewing</option>
-                                        <option value="closed" className="bg-slate-800">Closed</option>
-                                    </select>
-                                </td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium">
-                                        <MapIcon size={12} className="text-blue-400"/>
-                                        <span className="truncate max-w-[180px]">{lead.prop}</span>
-                                    </div>
-                                </td>
-                                <td className="p-4">
-                                    <div className="flex gap-2">
-                                        <button onClick={() => copyToClipboard(lead.email, 'Email')} className="p-1.5 bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white rounded transition" title={lead.email}><Mail size={16}/></button>
-                                        <button onClick={() => copyToClipboard(lead.phone, 'Phone')} className="p-1.5 bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white rounded transition" title={lead.phone}><Phone size={16}/></button>
-                                    </div>
-                                </td>
-                                <td className="p-4 text-xs text-slate-500 font-mono">
-                                    {lead.date}
-                                </td>
-                                <td className="p-4 text-right">
-                                    <button 
-                                        onClick={() => onDeleteSingle(lead.id)}
-                                        className="p-2 text-slate-500 hover:bg-red-900/20 hover:text-red-400 rounded-full transition"
-                                        title="Delete Lead"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </td>
-                            </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
+                                    </td>
+
+                                    {/* 5. CONTACT (No Action on cell, only buttons) */}
+                                    <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => copyToClipboard(lead.email, 'Email')} className="p-1.5 bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white rounded transition" title={lead.email}><Mail size={16}/></button>
+                                            <button onClick={() => copyToClipboard(lead.phone, 'Phone')} className="p-1.5 bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white rounded transition" title={lead.phone}><Phone size={16}/></button>
+                                        </div>
+                                    </td>
+
+                                    {/* 6. DATE (CLICKABLE) */}
+                                    <td className="p-4 text-xs text-slate-500 font-mono cursor-pointer" onClick={() => setActiveLeadId(lead.id)}>
+                                        {lead.date}
+                                    </td>
+
+                                    {/* 7. DELETE (No Action on cell, only button) */}
+                                    <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                        <button 
+                                            onClick={() => onDeleteSingle(lead.id)}
+                                            className="p-2 text-slate-500 hover:bg-red-900/20 hover:text-red-400 rounded-full transition"
+                                            title="Delete Lead"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 // --- MAIN COMPONENT ---
 export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
@@ -314,17 +344,13 @@ export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
         if (!destination) return; 
         if (source.droppableId === destination.droppableId && source.index === destination.index) return; 
         
-        // 1. Move Lead in UI/Context
         moveLead(draggableId, source.droppableId, destination.droppableId); 
 
-        // 2. NEW: Automatic Property Status Update
+        // Automatic Property Status Update
         if (destination.droppableId === 'closed') {
-            // Find the lead object to get the property name
             const movedLead = leads[source.droppableId].find(l => l.id.toString() === draggableId);
             
             if (movedLead && movedLead.prop) {
-                // Try to find a matching lot in the database
-                // Note: This matches strictly by 'lot_number' text.
                 const { error } = await supabase
                     .from('lots')
                     .update({ status: 'sold' })
@@ -359,7 +385,7 @@ export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
             {/* --- STATS SECTION --- */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6 shrink-0 h-[180px]">
                 
-                {/* 1. Highlight Card (Green/Blue Gradient) */}
+                {/* 1. Highlight Card */}
                 <div className="lg:col-span-2 bg-gradient-to-r from-emerald-600 to-blue-600 rounded-2xl p-8 text-white shadow-xl shadow-emerald-900/20 flex items-center justify-between relative overflow-hidden ring-1 ring-white/10">
                     <div className="relative z-10">
                         <div className="flex items-center gap-3 mb-3">
@@ -374,7 +400,7 @@ export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
                     </div>
                 </div>
 
-                {/* 2. 2x2 Stats Grid (Stacked) */}
+                {/* 2. 2x2 Stats Grid (Using StatCard) */}
                 <div className="lg:col-span-2 grid grid-cols-2 gap-4">
                     <StatCard label="New" value={leads.new.length} icon={Clock} color="text-blue-400" bg="bg-blue-500/10" />
                     <StatCard label="Contacted" value={leads.contacted.length} icon={Mail} color="text-orange-400" bg="bg-orange-500/10" />
@@ -386,7 +412,7 @@ export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
             {/* --- TOOLBAR --- */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-800 p-2.5 rounded-xl border border-slate-700 shadow-lg mb-6 shrink-0">
                 
-                {/* 1. Filters (Themed Tabs) */}
+                {/* 1. Filters */}
                 <div className="flex bg-slate-900 p-1 rounded-lg overflow-x-auto w-full md:w-auto border border-slate-800">
                     {['all', 'new', 'contacted', 'viewing', 'closed'].map((tab) => (
                         <button 
@@ -403,7 +429,7 @@ export const LeadsBoard = ({ crmEnabled, onToggleCrm }) => {
                     ))}
                 </div>
 
-                {/* 2. Search Bar (Centered) */}
+                {/* 2. Search Bar */}
                 <div className="relative flex-1 w-full md:max-w-md mx-4 group">
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-400 transition-colors pointer-events-none" />
                     <input 
